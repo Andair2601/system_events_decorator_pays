@@ -22,6 +22,11 @@ export function handleError(err: Error, c: Context) {
   if (err instanceof BadRequestError || err instanceof MaterialInexistenteError) {
     return c.json({ error: err.message }, 400);
   }
+  // c.req.json() lanza SyntaxError nativo cuando el body no es JSON válido;
+  // sin este caso caía al 500 genérico de abajo.
+  if (err instanceof SyntaxError) {
+    return c.json({ error: "JSON inválido en el cuerpo de la petición" }, 400);
+  }
   if (
     err instanceof MaterialNoEncontradoError ||
     err instanceof ClienteNoEncontradoError ||

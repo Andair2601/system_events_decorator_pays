@@ -8,7 +8,9 @@ services:
       POSTGRES_PASSWORD: deco_dev_local
       POSTGRES_DB: deco_eventos
     ports:
-      - "5432:5432"
+      # 5432 está ocupado en este equipo por un Postgres nativo ajeno al
+      # proyecto; se mapea a 5433 en el host para no chocar con él.
+      - "5433:5432"
     volumes:
       - deco_eventos_db_data:/var/lib/postgresql/data
 

@@ -74,6 +74,15 @@ describe("API materiales", () => {
     expect(res.status).toBe(400);
   });
 
+  it("responde 400 si el body no es JSON válido", async () => {
+    const res = await app.request("/materiales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{esto no es json",
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("desactiva y reactiva un material", async () => {
     const { body: material } = await crearMaterialViaApi();
 
