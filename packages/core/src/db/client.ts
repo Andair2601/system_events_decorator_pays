@@ -1,13 +1,14 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema.js";
+import type { Database } from "./types.js";
 
 let cachedClient: ReturnType<typeof postgres> | undefined;
-let cachedDb: ReturnType<typeof drizzle<typeof schema>> | undefined;
+let cachedDb: Database | undefined;
 
 // Singleton reusado entre invocaciones "warm" de Lambda; pool chico a propósito
 // para no agotar max_connections de un db.t4g.micro cuando escale la concurrencia.
-export function getDb() {
+export function getDb(): Database {
   if (!cachedDb) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
@@ -26,4 +27,4 @@ export async function closeDb() {
   cachedDb = undefined;
 }
 
-export type Database = ReturnType<typeof getDb>;
+export type { Database } from "./types.js";

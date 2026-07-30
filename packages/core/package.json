@@ -13,11 +13,13 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.44.6",
     "postgres": "^3.4.7",
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.10",
     "@types/node": "^24.0.0",
     "drizzle-kit": "^0.31.6",
     "tsx": "^4.19.2",
