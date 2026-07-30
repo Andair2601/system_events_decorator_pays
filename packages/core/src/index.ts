@@ -13,3 +13,6 @@ export * from "./configuracion/service.js";
 export * from "./cotizaciones/schemas.js";
 export * from "./cotizaciones/service.js";
 export * from "./cotizaciones/errors.js";
+export * from "./reservas/schemas.js";
+export * from "./reservas/service.js";
+export * from "./reservas/errors.js";
