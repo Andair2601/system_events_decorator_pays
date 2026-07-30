@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: deco-eventos-local-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: deco
+      POSTGRES_PASSWORD: deco_dev_local
+      POSTGRES_DB: deco_eventos
+    ports:
+      - "5432:5432"
+    volumes:
+      - deco_eventos_db_data:/var/lib/postgresql/data
+
+volumes:
+  deco_eventos_db_data:

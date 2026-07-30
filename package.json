@@ -1,0 +1,16 @@
+{
+  "name": "deco-eventos",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down"
+  }
+}
