@@ -1,0 +1,111 @@
+import type {
+  Cliente,
+  Cotizacion,
+  CotizacionConItems,
+  ConfiguracionCosteo,
+  Material,
+  Reserva,
+} from "../types.js";
+
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly detalles?: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...options?.headers },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.error ?? `Error ${res.status}`, res.status, body.detalles);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+function query(params: Record<string, string | number | boolean | undefined>): string {
+  const usable = Object.entries(params).filter(([, v]) => v !== undefined && v !== "");
+  if (usable.length === 0) return "";
+  const search = new URLSearchParams(usable.map(([k, v]) => [k, String(v)]));
+  return `?${search.toString()}`;
+}
+
+export const api = {
+  materiales: {
+    listar: (opts: { categoria?: string; incluirInactivos?: boolean } = {}) =>
+      request<Material[]>(`/materiales${query(opts)}`),
+    crear: (input: {
+      nombre: string;
+      categoria: string;
+      costoUnitario: number;
+      unidad: string;
+    }) => request<Material>("/materiales", { method: "POST", body: JSON.stringify(input) }),
+    actualizar: (id: number, input: Partial<{ nombre: string; categoria: string; costoUnitario: number; unidad: string }>) =>
+      request<Material>(`/materiales/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+    desactivar: (id: number) => request<Material>(`/materiales/${id}/desactivar`, { method: "POST" }),
+    reactivar: (id: number) => request<Material>(`/materiales/${id}/reactivar`, { method: "POST" }),
+  },
+
+  clientes: {
+    listar: () => request<Cliente[]>("/clientes"),
+    crear: (input: { nombre: string; telefono: string; email?: string; notas?: string }) =>
+      request<Cliente>("/clientes", { method: "POST", body: JSON.stringify(input) }),
+  },
+
+  configuracion: {
+    obtener: () => request<ConfiguracionCosteo | null>("/configuracion"),
+    guardar: (input: {
+      tarifaManoObraHora: number;
+      margenDefaultPct: number;
+      tarifaTransporteDefault: number;
+    }) => request<ConfiguracionCosteo>("/configuracion", { method: "PUT", body: JSON.stringify(input) }),
+  },
+
+  cotizaciones: {
+    listar: (opts: { clienteId?: number; estado?: string } = {}) =>
+      request<Cotizacion[]>(`/cotizaciones${query(opts)}`),
+    obtener: (id: number) => request<CotizacionConItems>(`/cotizaciones/${id}`),
+    crear: (input: {
+      clienteId: number;
+      nombreEvento: string;
+      tipoEvento: string;
+      items: { materialId: number; cantidad: number }[];
+      horasManoObraEstimadas?: number;
+      tarifaManoObraHora?: number;
+      costoTransporte?: number;
+      margenPct?: number;
+    }) =>
+      request<CotizacionConItems>("/cotizaciones", { method: "POST", body: JSON.stringify(input) }),
+    actualizarEstado: (id: number, estado: string) =>
+      request<Cotizacion>(`/cotizaciones/${id}/estado`, {
+        method: "PATCH",
+        body: JSON.stringify({ estado }),
+      }),
+  },
+
+  reservas: {
+    listar: (opts: { desde?: string; hasta?: string; estado?: string } = {}) =>
+      request<Reserva[]>(`/reservas${query(opts)}`),
+    crear: (input: {
+      cotizacionId: number;
+      fechaEvento: string;
+      horaEvento?: string;
+      lugar: string;
+      notas?: string;
+    }) => request<Reserva>("/reservas", { method: "POST", body: JSON.stringify(input) }),
+    actualizarEstado: (id: number, estado: string) =>
+      request<Reserva>(`/reservas/${id}/estado`, { method: "PATCH", body: JSON.stringify({ estado }) }),
+    registrarPago: (id: number, monto: number) =>
+      request<Reserva>(`/reservas/${id}/pagos`, { method: "POST", body: JSON.stringify({ monto }) }),
+  },
+};
