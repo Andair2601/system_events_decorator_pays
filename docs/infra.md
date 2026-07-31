@@ -8,8 +8,12 @@ parametrizada por ambiente (`dev` / `prod`), misma cuenta de AWS, región
 ## Arquitectura (Fase 1)
 
 ```
-Cliente HTTP
+Navegador
    │
+   ▼
+CloudFront (deco-eventos-{ambiente}-panel)  ──sirve──  S3 privado (build de apps/web)
+   │
+   │ (llamadas fetch a la API)
    ▼
 API Gateway HTTP API (deco-eventos-{ambiente}-api-gateway)
    │
@@ -23,6 +27,31 @@ RDS Postgres "deco-eventos-{ambiente}-db" (db.t4g.micro, Single-AZ)
 Además, un tercer Lambda `deco-eventos-{ambiente}-migrate` (misma VPC/SG,
 sin exponerse vía API Gateway) para aplicar migraciones — ver sección
 "Migraciones" más abajo.
+
+## Panel web (S3 + CloudFront)
+
+El build estático de `apps/web` (`vite build`) se sube a un bucket S3
+privado (`deco-eventos-{ambiente}-panel-{accountId}`, bloqueado a acceso
+público directo) y se sirve por una distribución de CloudFront que
+accede al bucket vía Origin Access Control — nunca hay un bucket policy
+público. CloudFront maneja el enrutamiento del lado del cliente de React
+Router: los 403/404 de rutas que no existen como archivo en S3 (ej.
+`/reservas`) se reescriben a `index.html` con status 200.
+
+**Detalle importante del flujo de deploy**: Vite hornea la URL de la API
+dentro del JS en tiempo de *build*, no es una variable de entorno de
+runtime. Por eso el orden es:
+
+1. `cdk deploy` (para tener/confirmar la URL de la API de ese ambiente).
+2. `VITE_API_URL=<url-de-la-api> pnpm --filter @deco-eventos/web build`
+   — genera `apps/web/dist`.
+3. `cdk deploy` de nuevo — `BucketDeployment` sincroniza `dist/` al
+   bucket e invalida la caché de CloudFront automáticamente.
+
+Costo: prácticamente $0/mes a este volumen — CloudFront tiene un free
+tier permanente de 1TB de transferencia + 10M requests/mes (no es solo
+para cuentas nuevas), y S3 para unos cientos de KB de assets es
+centavos.
 
 - **VPC sin NAT Gateway ni Internet Gateway**: Lambda solo necesita hablar
   con RDS dentro de la misma VPC, así que alcanza con subredes
@@ -101,7 +130,8 @@ en AWS (`GET /cotizaciones/:id/pdf` devolvió un PDF válido de verdad).
 | CloudWatch Logs | ~$0-1 |
 | Secrets Manager (1 secreto) | ~$0.40 |
 | VPC (sin NAT/IGW) | $0 |
-| **Total por ambiente** | **~$15-17/mes** |
+| Panel web (S3 + CloudFront) | ~$0-1 |
+| **Total por ambiente** | **~$15-18/mes** |
 
 Con `dev` y `prod` desplegados simultáneamente: **~$30-34/mes** en total.
 El bucket S3 y el repo ECR que crea `cdk bootstrap` (una sola vez,

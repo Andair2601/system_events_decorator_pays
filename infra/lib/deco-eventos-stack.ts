@@ -10,11 +10,15 @@ import {
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as apigwv2Integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as budgets from "aws-cdk-lib/aws-budgets";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import type { Construct } from "constructs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -211,6 +215,50 @@ export class DecoEventosStack extends Stack {
       ),
     });
 
+    // --- Panel web: sitio estático (build de apps/web) en S3, servido
+    // por CloudFront. El bucket es privado (bloqueado a acceso público
+    // directo); CloudFront accede vía Origin Access Control, no un
+    // bucket policy público.
+    //
+    // El build de Vite necesita saber la URL de la API EN TIEMPO DE
+    // BUILD (queda inline en el JS, no es una env var de runtime), así
+    // que el flujo es: 1) desplegar/actualizar esta stack para tener la
+    // URL de la API, 2) correr `pnpm --filter @deco-eventos/web build`
+    // con VITE_API_URL apuntando a esa URL, 3) `cdk deploy` de nuevo
+    // para subir el build nuevo a S3 (BucketDeployment invalida el
+    // caché de CloudFront automáticamente). Documentado en docs/infra.md.
+    const panelBucket = new s3.Bucket(this, "PanelBucket", {
+      bucketName: `${nombre("panel")}-${this.account}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: esProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      autoDeleteObjects: !esProd,
+    });
+
+    const panelDistribution = new cloudfront.Distribution(this, "PanelDistribution", {
+      comment: nombre("panel"),
+      defaultRootObject: "index.html",
+      defaultBehavior: {
+        origin: origins.S3BucketOrigin.withOriginAccessControl(panelBucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      },
+      // React Router usa rutas del lado del cliente (/cotizaciones, etc.)
+      // que no existen como objetos en S3; sin esto, refrescar en esas
+      // rutas daría 403/404 en vez de cargar la app.
+      errorResponses: [
+        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: "/index.html" },
+        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: "/index.html" },
+      ],
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // solo edges NA/EU: el más barato
+    });
+
+    new s3deploy.BucketDeployment(this, "PanelDeployment", {
+      sources: [s3deploy.Source.asset(path.join(REPO_ROOT, "apps/web/dist"))],
+      destinationBucket: panelBucket,
+      distribution: panelDistribution,
+      distributionPaths: ["/*"],
+    });
+
     // --- Presupuesto: alerta por email al superar el 80% y el 100% del
     // gasto mensual esperado para este ambiente.
     new budgets.CfnBudget(this, "Budget", {
@@ -233,5 +281,6 @@ export class DecoEventosStack extends Stack {
 
     new CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });
     new CfnOutput(this, "DbSecretName", { value: db.secret!.secretName });
+    new CfnOutput(this, "PanelUrl", { value: `https://${panelDistribution.distributionDomainName}` });
   }
 }
