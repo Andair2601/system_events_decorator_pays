@@ -1,34 +1,47 @@
 import { Decimal } from "decimal.js";
 import PDFDocument from "pdfkit";
+import { LOGO_PNG_BASE64 } from "./assets/logo-base64.js";
 import type { CotizacionCompleta } from "./service.js";
 
 export type VistaPdf = "interno" | "cliente";
 
 const MONEDA = "S/";
 const MARGEN = 50;
-const COL_X = [MARGEN, MARGEN + 240, MARGEN + 330, MARGEN + 420] as const;
-const COL_W = [230, 80, 80, 75] as const;
-const TABLA_DERECHA = COL_X[3] + COL_W[3];
+
+// Vista interna: 4 columnas (incluye costo unitario y subtotal — información
+// de costos que no debe salir del negocio).
+const COL_X_INTERNO = [MARGEN, MARGEN + 240, MARGEN + 330, MARGEN + 420] as const;
+const COL_W_INTERNO = [230, 80, 80, 75] as const;
+// Vista cliente: solo material + cantidad. No se muestra costo unitario ni
+// subtotal por línea (evita que el cliente "cotice por partes" comparando
+// precio por ítem); el total de materiales sigue apareciendo, pero como un
+// solo monto en el resumen, no desglosado.
+const COL_X_CLIENTE = [MARGEN, MARGEN + 400] as const;
+const COL_W_CLIENTE = [400, 95] as const;
+
+const TABLA_DERECHA = MARGEN + 470; // = COL_X_INTERNO[3]+COL_W_INTERNO[3] = COL_X_CLIENTE[1]+COL_W_CLIENTE[1]
 
 function filaTabla(
   doc: PDFKit.PDFDocument,
   y: number,
-  celdas: [string, string, string, string],
+  colX: readonly number[],
+  colW: readonly number[],
+  celdas: string[],
   opts: { negrita?: boolean; alinearDerechaDesde?: number } = {},
 ) {
   doc.font(opts.negrita ? "Helvetica-Bold" : "Helvetica").fontSize(10);
   celdas.forEach((texto, i) => {
     const align = i >= (opts.alinearDerechaDesde ?? 1) ? "right" : "left";
-    doc.text(texto, COL_X[i]!, y, { width: COL_W[i], align });
+    doc.text(texto, colX[i]!, y, { width: colW[i], align });
   });
 }
 
 // Genera el PDF de una cotización. Dos vistas del mismo total:
-// - "interno" (default): desglose real, incluye el % de margen — para uso
-//   propio del negocio.
-// - "cliente": el margen no se muestra como porcentaje (revela cuánto se
-//   gana); se presenta como una línea de servicio con su monto en soles,
-//   enmarcada como valor entregado (diseño/producción) en vez de markup.
+// - "interno" (default): desglose real, incluye el % de margen y el costo
+//   unitario/subtotal de cada material — para uso propio del negocio.
+// - "cliente": no expone información de costos. El margen se presenta como
+//   "Servicio de decoración" (monto, no %), y los materiales se listan sin
+//   precio por ítem (solo el total de materiales en el resumen).
 // Usa las fuentes estándar de pdfkit (no requiere archivos de fuente
 // externos), pensado para correr también en un handler Lambda.
 export async function generarCotizacionPdf(
@@ -42,13 +55,39 @@ export async function generarCotizacionPdf(
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    doc.font("Helvetica-Bold").fontSize(18).text("BANANA DECOPARTY");
+    const logo = Buffer.from(LOGO_PNG_BASE64, "base64");
+
+    // Marca de agua: se dibuja primero, a muy baja opacidad, para quedar
+    // detrás de todo lo demás — pdfkit no tiene z-index, el orden de
+    // dibujo es el orden de apilado.
+    const marcaAguaTam = 320;
+    doc.opacity(0.06);
+    doc.image(logo, (doc.page.width - marcaAguaTam) / 2, (doc.page.height - marcaAguaTam) / 2, {
+      width: marcaAguaTam,
+      height: marcaAguaTam,
+    });
+    doc.opacity(1);
+
+    // Header: logo chico + nombre del negocio, posicionados a mano (no en
+    // flujo automático) para controlar dónde sigue el resto del contenido.
+    const logoHeaderTam = 40;
+    doc.image(logo, MARGEN, MARGEN, { width: logoHeaderTam, height: logoHeaderTam });
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(18)
+      .text("BANANA DECOPARTY", MARGEN + logoHeaderTam + 12, MARGEN + 4);
     doc
       .font("Helvetica")
       .fontSize(10)
       .fillColor("#555555")
-      .text(`Cotización #${data.id} · emitida el ${new Date().toLocaleDateString("es-PE")}`);
-    doc.fillColor("#000000").moveDown(1.5);
+      .text(
+        `Cotización #${data.id} · emitida el ${new Date().toLocaleDateString("es-PE")}`,
+        MARGEN + logoHeaderTam + 12,
+        MARGEN + 26,
+      );
+    doc.fillColor("#000000");
+    doc.x = MARGEN;
+    doc.y = MARGEN + logoHeaderTam + 18;
 
     doc.font("Helvetica-Bold").fontSize(12).text("Cliente");
     doc.font("Helvetica").fontSize(10);
@@ -66,8 +105,13 @@ export async function generarCotizacionPdf(
     doc.font("Helvetica-Bold").fontSize(12).text("Materiales");
     doc.moveDown(0.5);
 
+    const colX = vista === "cliente" ? COL_X_CLIENTE : COL_X_INTERNO;
+    const colW = vista === "cliente" ? COL_W_CLIENTE : COL_W_INTERNO;
+    const encabezados =
+      vista === "cliente" ? ["Material", "Cantidad"] : ["Material", "Cantidad", "Costo unit.", "Subtotal"];
+
     let y = doc.y;
-    filaTabla(doc, y, ["Material", "Cantidad", "Costo unit.", "Subtotal"], { negrita: true });
+    filaTabla(doc, y, colX, colW, encabezados, { negrita: true });
     y += 16;
     doc
       .moveTo(MARGEN, y)
@@ -77,12 +121,16 @@ export async function generarCotizacionPdf(
     y += 8;
 
     for (const item of data.items) {
-      filaTabla(doc, y, [
-        `${item.materialNombre} (${item.materialUnidad})`,
-        item.cantidad,
-        `${MONEDA} ${item.costoUnitarioSnapshot}`,
-        `${MONEDA} ${item.subtotal}`,
-      ]);
+      const fila =
+        vista === "cliente"
+          ? [`${item.materialNombre} (${item.materialUnidad})`, item.cantidad]
+          : [
+              `${item.materialNombre} (${item.materialUnidad})`,
+              item.cantidad,
+              `${MONEDA} ${item.costoUnitarioSnapshot}`,
+              `${MONEDA} ${item.subtotal}`,
+            ];
+      filaTabla(doc, y, colX, colW, fila);
       y += 18;
     }
     doc.x = MARGEN;
