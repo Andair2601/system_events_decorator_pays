@@ -60,6 +60,7 @@ export interface Cotizacion {
   costoTransporte: string;
   margenPctAplicado: string;
   costoMaterialesTotal: string;
+  descuentoMonto: string;
   precioFinal: string;
   estado: CotizacionEstado;
   origen: CotizacionOrigen;

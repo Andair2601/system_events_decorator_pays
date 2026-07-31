@@ -16,6 +16,7 @@ const initialForm = {
   tarifaManoObraHora: "",
   costoTransporte: "",
   margenPct: "",
+  descuentoMonto: "",
 };
 
 export default function CotizacionesPage() {
@@ -28,6 +29,7 @@ export default function CotizacionesPage() {
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [detalles, setDetalles] = useState<Record<number, CotizacionConItems>>({});
+  const [editandoId, setEditandoId] = useState<number | null>(null);
 
   async function cargarCotizaciones() {
     try {
@@ -68,13 +70,47 @@ export default function CotizacionesPage() {
     setItems((prev) => prev.filter((_, i) => i !== index));
   }
 
-  async function crear(ev: React.FormEvent) {
+  function cancelarEdicion() {
+    setEditandoId(null);
+    setForm(initialForm);
+    setItems([{ materialId: "", cantidad: "" }]);
+  }
+
+  // Solo cotizaciones en "borrador" son editables (la API responde 409
+  // si no); precarga el formulario con los valores ya calculados.
+  async function iniciarEdicion(c: Cotizacion) {
+    setError(null);
+    try {
+      const completa = await api.cotizaciones.obtener(c.id);
+      setEditandoId(c.id);
+      const horas = Number(c.horasManoObraEstimadas);
+      setForm({
+        clienteId: String(c.clienteId),
+        nombreEvento: c.nombreEvento,
+        tipoEvento: c.tipoEvento as typeof initialForm.tipoEvento,
+        horasManoObraEstimadas: c.horasManoObraEstimadas,
+        tarifaManoObraHora: horas > 0 ? (Number(c.costoManoObra) / horas).toFixed(2) : "",
+        costoTransporte: c.costoTransporte,
+        margenPct: c.margenPctAplicado,
+        descuentoMonto: c.descuentoMonto,
+      });
+      setItems(
+        completa.items.map((it) => ({
+          materialId: String(it.materialId),
+          cantidad: it.cantidad,
+        })),
+      );
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "No se pudo cargar la cotización para editar");
+    }
+  }
+
+  async function guardar(ev: React.FormEvent) {
     ev.preventDefault();
     setError(null);
     setGuardando(true);
     try {
-      await api.cotizaciones.crear({
-        clienteId: Number(form.clienteId),
+      const datosComunes = {
         nombreEvento: form.nombreEvento,
         tipoEvento: form.tipoEvento,
         items: items
@@ -84,12 +120,22 @@ export default function CotizacionesPage() {
         tarifaManoObraHora: form.tarifaManoObraHora ? Number(form.tarifaManoObraHora) : undefined,
         costoTransporte: form.costoTransporte ? Number(form.costoTransporte) : undefined,
         margenPct: form.margenPct ? Number(form.margenPct) : undefined,
-      });
-      setForm(initialForm);
-      setItems([{ materialId: "", cantidad: "" }]);
+        descuentoMonto: form.descuentoMonto ? Number(form.descuentoMonto) : undefined,
+      };
+      if (editandoId) {
+        await api.cotizaciones.actualizar(editandoId, datosComunes);
+      } else {
+        await api.cotizaciones.crear({ ...datosComunes, clienteId: Number(form.clienteId) });
+      }
+      cancelarEdicion();
+      setDetalles({});
       await cargarCotizaciones();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "No se pudo crear la cotización");
+      setError(
+        e instanceof ApiError
+          ? e.message
+          : `No se pudo ${editandoId ? "editar" : "crear"} la cotización`,
+      );
     } finally {
       setGuardando(false);
     }
@@ -121,14 +167,18 @@ export default function CotizacionesPage() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card">
-        <h2>Nueva cotización</h2>
-        <form onSubmit={crear}>
+        <h2>{editandoId ? `Editar cotización #${editandoId}` : "Nueva cotización"}</h2>
+        {editandoId && (
+          <p className="muted">El cliente no se puede cambiar al editar; solo mientras está en borrador.</p>
+        )}
+        <form onSubmit={guardar}>
           <div className="form-grid" style={{ marginBottom: "0.85rem" }}>
             <label>
               Cliente
               <select
                 value={form.clienteId}
                 onChange={(e) => setForm({ ...form, clienteId: e.target.value })}
+                disabled={editandoId !== null}
                 required
               >
                 <option value="">Selecciona…</option>
@@ -239,11 +289,28 @@ export default function CotizacionesPage() {
                 onChange={(e) => setForm({ ...form, margenPct: e.target.value })}
               />
             </label>
+            <label>
+              Descuento (S/)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.descuentoMonto}
+                onChange={(e) => setForm({ ...form, descuentoMonto: e.target.value })}
+              />
+            </label>
           </div>
 
-          <button type="submit" disabled={guardando}>
-            {guardando ? "Calculando…" : "Generar cotización"}
-          </button>
+          <div className="actions-row">
+            <button type="submit" disabled={guardando}>
+              {guardando ? "Guardando…" : editandoId ? "Guardar cambios" : "Generar cotización"}
+            </button>
+            {editandoId && (
+              <button type="button" className="secondary" onClick={cancelarEdicion}>
+                Cancelar
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
@@ -303,6 +370,11 @@ export default function CotizacionesPage() {
                   ) : (
                     <span className="muted">Cargando…</span>
                   )}
+                  {detalles[c.id] && Number(detalles[c.id]!.descuentoMonto) > 0 && (
+                    <p className="muted" style={{ marginTop: "0.4rem" }}>
+                      Descuento aplicado: -S/ {detalles[c.id]!.descuentoMonto}
+                    </p>
+                  )}
                 </details>
               </td>
               <td>{clienteNombre(c.clienteId)}</td>
@@ -320,9 +392,31 @@ export default function CotizacionesPage() {
                 </select>
               </td>
               <td>
-                <a className="btn secondary" href={api.cotizaciones.pdfUrl(c.id)} target="_blank" rel="noreferrer">
-                  Descargar PDF
-                </a>
+                <div className="actions-row">
+                  {c.estado === "borrador" && (
+                    <button type="button" className="secondary" onClick={() => iniciarEdicion(c)}>
+                      Editar
+                    </button>
+                  )}
+                  <a
+                    className="btn secondary"
+                    href={api.cotizaciones.pdfUrl(c.id, "interno")}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Incluye el desglose de margen — solo para uso propio"
+                  >
+                    PDF interno
+                  </a>
+                  <a
+                    className="btn"
+                    href={api.cotizaciones.pdfUrl(c.id, "cliente")}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Versión para enviar al cliente, sin mostrar el margen"
+                  >
+                    PDF cliente
+                  </a>
+                </div>
               </td>
             </tr>
           ))}

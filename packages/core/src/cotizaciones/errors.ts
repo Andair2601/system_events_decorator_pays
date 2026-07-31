@@ -24,3 +24,17 @@ export class CotizacionNoAceptadaError extends Error {
     this.name = "CotizacionNoAceptadaError";
   }
 }
+
+export class CotizacionNoEditableError extends Error {
+  constructor(
+    public readonly cotizacionId: number,
+    public readonly estadoActual: string,
+  ) {
+    super(
+      `La cotización ${cotizacionId} está en estado "${estadoActual}"; solo se puede editar` +
+        ` mientras está en "borrador" (para no cambiar el precio después de que el cliente ya` +
+        ` la vio o la aceptó)`,
+    );
+    this.name = "CotizacionNoEditableError";
+  }
+}

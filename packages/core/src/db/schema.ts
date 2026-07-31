@@ -88,6 +88,11 @@ export const cotizaciones = pgTable(
     costoMaterialesTotal: numeric("costo_materiales_total", { precision: 12, scale: 2 })
       .notNull()
       .default("0"),
+    // Monto fijo en soles, no porcentaje: se resta directo del total ya
+    // calculado (materiales + mano de obra + transporte + margen).
+    descuentoMonto: numeric("descuento_monto", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
     precioFinal: numeric("precio_final", { precision: 12, scale: 2 }).notNull().default("0"),
     estado: text("estado").notNull().default("borrador"),
     origen: text("origen").notNull().default("manual"), // Fase 4: whatsapp_agente
@@ -98,6 +103,7 @@ export const cotizaciones = pgTable(
     check("cotizaciones_tipo_evento_check", sql`${table.tipoEvento} in ('${sql.raw(TIPOS_EVENTO.join("','"))}')`),
     check("cotizaciones_estado_check", sql`${table.estado} in ('${sql.raw(COTIZACION_ESTADOS.join("','"))}')`),
     check("cotizaciones_origen_check", sql`${table.origen} in ('${sql.raw(COTIZACION_ORIGENES.join("','"))}')`),
+    check("cotizaciones_descuento_monto_check", sql`${table.descuentoMonto} >= 0`),
     index("idx_cotizaciones_cliente").on(table.clienteId),
     index("idx_cotizaciones_estado").on(table.estado),
   ],

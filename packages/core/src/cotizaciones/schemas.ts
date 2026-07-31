@@ -17,11 +17,27 @@ export const crearCotizacionInputSchema = z.object({
   tarifaManoObraHora: z.number().nonnegative().optional(),
   costoTransporte: z.number().nonnegative().optional(),
   margenPct: z.number().nonnegative().optional(),
+  descuentoMonto: z.number().nonnegative().optional(),
   imagenReferenciaUrl: z.string().url().optional(),
   origen: z.enum(COTIZACION_ORIGENES).default("manual"),
 });
 // z.input porque `origen` tiene default(): debe quedar opcional en el tipo de entrada.
 export type CrearCotizacionInput = z.input<typeof crearCotizacionInputSchema>;
+
+// Mismo shape que crear, sin clienteId ni origen (no tiene sentido
+// "reasignar" una cotización a otro cliente ni cambiar su origen editando).
+export const actualizarCotizacionInputSchema = z.object({
+  nombreEvento: z.string().trim().min(1, "El nombre del evento es obligatorio"),
+  tipoEvento: z.enum(TIPOS_EVENTO),
+  items: z.array(cotizacionItemEntradaSchema).min(1, "La cotización necesita al menos un material"),
+  horasManoObraEstimadas: z.number().nonnegative().optional(),
+  tarifaManoObraHora: z.number().nonnegative().optional(),
+  costoTransporte: z.number().nonnegative().optional(),
+  margenPct: z.number().nonnegative().optional(),
+  descuentoMonto: z.number().nonnegative().optional(),
+  imagenReferenciaUrl: z.string().url().optional(),
+});
+export type ActualizarCotizacionInput = z.infer<typeof actualizarCotizacionInputSchema>;
 
 export const actualizarEstadoCotizacionInputSchema = z.object({
   estado: z.enum(COTIZACION_ESTADOS),

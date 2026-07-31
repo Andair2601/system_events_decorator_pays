@@ -114,4 +114,51 @@ describe("calcularCotizacion", () => {
       }),
     ).toThrow(/no puede ser negativo/);
   });
+
+  it("resta el descuento del total ya calculado", () => {
+    const resultado = calcularCotizacion({
+      items: [{ materialId: 1, cantidad: 2, costoUnitario: 10 }],
+      horasManoObraEstimadas: 3,
+      tarifaManoObraHora: 15,
+      costoTransporte: 20,
+      margenPct: 30,
+      descuentoMonto: 10,
+    });
+
+    // subtotal con margen = 110.50 (igual que el primer test); -10 de descuento
+    expect(resultado.descuentoMonto).toBe("10.00");
+    expect(resultado.precioFinal).toBe("100.50");
+  });
+
+  it("sin descuento, precioFinal no cambia (default 0)", () => {
+    const resultado = calcularCotizacion({
+      items: [{ materialId: 1, cantidad: 1, costoUnitario: 100 }],
+      tarifaManoObraHora: 0,
+      margenPct: 0,
+    });
+    expect(resultado.descuentoMonto).toBe("0.00");
+    expect(resultado.precioFinal).toBe("100.00");
+  });
+
+  it("rechaza un descuento negativo", () => {
+    expect(() =>
+      calcularCotizacion({
+        items: [{ materialId: 1, cantidad: 1, costoUnitario: 100 }],
+        tarifaManoObraHora: 0,
+        margenPct: 0,
+        descuentoMonto: -5,
+      }),
+    ).toThrow(/no puede ser negativo/);
+  });
+
+  it("rechaza un descuento mayor al total de la cotización", () => {
+    expect(() =>
+      calcularCotizacion({
+        items: [{ materialId: 1, cantidad: 1, costoUnitario: 100 }],
+        tarifaManoObraHora: 0,
+        margenPct: 0,
+        descuentoMonto: 150,
+      }),
+    ).toThrow(/no puede ser mayor al total/);
+  });
 });

@@ -148,8 +148,17 @@ describe("API flujo completo: cotización -> reserva", () => {
     const resPdf = await app.request(`/cotizaciones/${cotizacion.id}/pdf`);
     expect(resPdf.status).toBe(200);
     expect(resPdf.headers.get("content-type")).toBe("application/pdf");
+    expect(resPdf.headers.get("content-disposition")).toContain(`cotizacion-${cotizacion.id}.pdf`);
     const bytes = new Uint8Array(await resPdf.arrayBuffer());
     expect(Buffer.from(bytes.subarray(0, 5)).toString("latin1")).toBe("%PDF-");
+
+    const resPdfCliente = await app.request(`/cotizaciones/${cotizacion.id}/pdf?vista=cliente`);
+    expect(resPdfCliente.status).toBe(200);
+    expect(resPdfCliente.headers.get("content-disposition")).toContain(
+      `cotizacion-${cotizacion.id}-cliente.pdf`,
+    );
+    const bytesCliente = new Uint8Array(await resPdfCliente.arrayBuffer());
+    expect(Buffer.from(bytesCliente.subarray(0, 5)).toString("latin1")).toBe("%PDF-");
   });
 
   it("responde 409 si se intenta reservar desde una cotización no aceptada", async () => {
@@ -185,6 +194,56 @@ describe("API flujo completo: cotización -> reserva", () => {
       items: [{ materialId: 9999, cantidad: 1 }],
     });
     expect(resCotizacion.status).toBe(400);
+  });
+
+  it("permite editar una cotización en borrador (PUT) y aplica descuento", async () => {
+    const { body: cliente } = await crearClienteViaApi();
+    const { body: material } = await crearMaterialViaApi();
+    const resCotizacion = await jsonRequest("/cotizaciones", "POST", {
+      clienteId: cliente.id,
+      nombreEvento: "Cotización editable",
+      tipoEvento: "otro",
+      items: [{ materialId: material.id, cantidad: 10 }],
+      tarifaManoObraHora: 0,
+      costoTransporte: 0,
+      margenPct: 0,
+    });
+    const cotizacion = await readJson(resCotizacion);
+    expect(cotizacion.precioFinal).toBe("10.00");
+
+    const resEditar = await jsonRequest(`/cotizaciones/${cotizacion.id}`, "PUT", {
+      nombreEvento: "Cotización editada",
+      tipoEvento: "otro",
+      items: [{ materialId: material.id, cantidad: 10 }],
+      tarifaManoObraHora: 0,
+      costoTransporte: 0,
+      margenPct: 0,
+      descuentoMonto: 3,
+    });
+    expect(resEditar.status).toBe(200);
+    const editada = await readJson(resEditar);
+    expect(editada.nombreEvento).toBe("Cotización editada");
+    expect(editada.precioFinal).toBe("7.00");
+  });
+
+  it("responde 409 al editar una cotización que ya no está en borrador", async () => {
+    const { body: cliente } = await crearClienteViaApi();
+    const { body: material } = await crearMaterialViaApi();
+    const resCotizacion = await jsonRequest("/cotizaciones", "POST", {
+      clienteId: cliente.id,
+      nombreEvento: "Cotización aceptada",
+      tipoEvento: "otro",
+      items: [{ materialId: material.id, cantidad: 1 }],
+    });
+    const cotizacion = await readJson(resCotizacion);
+    await jsonRequest(`/cotizaciones/${cotizacion.id}/estado`, "PATCH", { estado: "aceptada" });
+
+    const resEditar = await jsonRequest(`/cotizaciones/${cotizacion.id}`, "PUT", {
+      nombreEvento: "Intento de edición",
+      tipoEvento: "otro",
+      items: [{ materialId: material.id, cantidad: 2 }],
+    });
+    expect(resEditar.status).toBe(409);
   });
 });
 

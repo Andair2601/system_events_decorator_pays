@@ -43,6 +43,13 @@ describe("cotizaciones.pdf", () => {
     expect(pdf).toBeInstanceOf(Buffer);
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
     expect(pdf.length).toBeGreaterThan(500);
+
+    // Vista de cliente: mismo total, sin exponer el % de margen (el
+    // contenido va comprimido dentro del PDF así que no se puede grep
+    // texto plano acá; queda verificado visualmente al bajar el PDF real).
+    const pdfCliente = await generarCotizacionPdf(completa!, "cliente");
+    expect(pdfCliente.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    expect(pdfCliente.length).toBeGreaterThan(500);
   });
 
   it("obtenerCotizacionCompleta devuelve null para un id inexistente", async () => {

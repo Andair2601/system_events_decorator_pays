@@ -20,7 +20,7 @@ export default function App() {
   return (
     <div className="layout">
       <header className="topbar">
-        <span className="brand">Decoración de Eventos</span>
+        <span className="brand">BANANA DECOPARTY</span>
         <button
           type="button"
           className="menu-toggle"

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import {
+  actualizarCotizacion,
   actualizarEstadoCotizacion,
   crearCotizacion,
   generarCotizacionPdf,
@@ -8,6 +9,7 @@ import {
   obtenerCotizacionCompleta,
   type CotizacionEstado,
   type Database,
+  type VistaPdf,
 } from "@deco-eventos/core";
 import { parseIdParam } from "../utils/params.js";
 
@@ -39,12 +41,23 @@ export function cotizacionesRoutes(db: Database) {
 
   app.get("/:id/pdf", async (c) => {
     const id = parseIdParam(c.req.param("id"));
+    const vista: VistaPdf = c.req.query("vista") === "cliente" ? "cliente" : "interno";
     const cotizacion = await obtenerCotizacionCompleta(db, id);
     if (!cotizacion) return c.json({ error: "Cotización no encontrada" }, 404);
-    const pdf = await generarCotizacionPdf(cotizacion);
+    const pdf = await generarCotizacionPdf(cotizacion, vista);
     c.header("Content-Type", "application/pdf");
-    c.header("Content-Disposition", `attachment; filename="cotizacion-${id}.pdf"`);
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="cotizacion-${id}${vista === "cliente" ? "-cliente" : ""}.pdf"`,
+    );
     return c.body(new Uint8Array(pdf));
+  });
+
+  app.put("/:id", async (c) => {
+    const id = parseIdParam(c.req.param("id"));
+    const body = await c.req.json();
+    const cotizacion = await actualizarCotizacion(db, id, body);
+    return c.json(cotizacion);
   });
 
   app.patch("/:id/estado", async (c) => {

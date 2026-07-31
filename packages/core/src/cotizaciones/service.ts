@@ -6,12 +6,70 @@ import { obtenerConfiguracionCosteo } from "../configuracion/service.js";
 import { clientes, cotizacionItems, cotizaciones, materiales } from "../db/schema.js";
 import type { CotizacionEstado } from "../db/enums.js";
 import type { Database } from "../db/types.js";
-import { CotizacionNoEncontradaError, MaterialInexistenteError } from "./errors.js";
 import {
+  CotizacionNoEditableError,
+  CotizacionNoEncontradaError,
+  MaterialInexistenteError,
+} from "./errors.js";
+import {
+  actualizarCotizacionInputSchema,
   actualizarEstadoCotizacionInputSchema,
   crearCotizacionInputSchema,
+  type ActualizarCotizacionInput,
+  type CotizacionItemEntrada,
   type CrearCotizacionInput,
 } from "./schemas.js";
+
+interface OpcionesCosteo {
+  horasManoObraEstimadas?: number;
+  tarifaManoObraHora?: number;
+  costoTransporte?: number;
+  margenPct?: number;
+  descuentoMonto?: number;
+}
+
+// Compartido entre crear y editar: valida que los materiales existan/estén
+// activos, completa lo que falte con configuracion_costeo, y corre el
+// motor de cotización. El costo unitario SIEMPRE se resuelve del catálogo
+// en este momento (snapshot), nunca de lo que mande el caller.
+async function calcularConMateriales(
+  db: Database,
+  items: CotizacionItemEntrada[],
+  opciones: OpcionesCosteo,
+) {
+  const materialIds = items.map((item) => item.materialId);
+  const materialesEncontrados = await db
+    .select()
+    .from(materiales)
+    .where(inArray(materiales.id, materialIds));
+  const materialesPorId = new Map(materialesEncontrados.map((m) => [m.id, m]));
+  for (const item of items) {
+    const material = materialesPorId.get(item.materialId);
+    if (!material || !material.activo) throw new MaterialInexistenteError(item.materialId);
+  }
+
+  const configuracion = await obtenerConfiguracionCosteo(db);
+  const horasManoObraEstimadas = opciones.horasManoObraEstimadas ?? 0;
+  const tarifaManoObraHora = opciones.tarifaManoObraHora ?? configuracion?.tarifaManoObraHora ?? 0;
+  const costoTransporte = opciones.costoTransporte ?? configuracion?.tarifaTransporteDefault ?? 0;
+  const margenPct = opciones.margenPct ?? configuracion?.margenDefaultPct ?? 0;
+  const descuentoMonto = opciones.descuentoMonto ?? 0;
+
+  const calculo = calcularCotizacion({
+    items: items.map((item) => ({
+      materialId: item.materialId,
+      cantidad: item.cantidad,
+      costoUnitario: materialesPorId.get(item.materialId)!.costoUnitario,
+    })),
+    horasManoObraEstimadas,
+    tarifaManoObraHora,
+    costoTransporte,
+    margenPct,
+    descuentoMonto,
+  });
+
+  return { calculo, horasManoObraEstimadas };
+}
 
 export async function crearCotizacion(db: Database, input: CrearCotizacionInput) {
   const data = crearCotizacionInputSchema.parse(input);
@@ -19,36 +77,7 @@ export async function crearCotizacion(db: Database, input: CrearCotizacionInput)
   const [cliente] = await db.select().from(clientes).where(eq(clientes.id, data.clienteId));
   if (!cliente) throw new ClienteNoEncontradoError(data.clienteId);
 
-  const materialIds = data.items.map((item) => item.materialId);
-  const materialesEncontrados = await db
-    .select()
-    .from(materiales)
-    .where(inArray(materiales.id, materialIds));
-  const materialesPorId = new Map(materialesEncontrados.map((m) => [m.id, m]));
-  for (const item of data.items) {
-    const material = materialesPorId.get(item.materialId);
-    if (!material || !material.activo) throw new MaterialInexistenteError(item.materialId);
-  }
-
-  const configuracion = await obtenerConfiguracionCosteo(db);
-  const tarifaManoObraHora = data.tarifaManoObraHora ?? configuracion?.tarifaManoObraHora ?? 0;
-  const costoTransporte = data.costoTransporte ?? configuracion?.tarifaTransporteDefault ?? 0;
-  const margenPct = data.margenPct ?? configuracion?.margenDefaultPct ?? 0;
-  const horasManoObraEstimadas = data.horasManoObraEstimadas ?? 0;
-
-  const calculo = calcularCotizacion({
-    items: data.items.map((item) => ({
-      materialId: item.materialId,
-      cantidad: item.cantidad,
-      // snapshot: el precio se congela con el costo del catálogo AHORA, no
-      // con lo que el cliente haya podido enviar.
-      costoUnitario: materialesPorId.get(item.materialId)!.costoUnitario,
-    })),
-    horasManoObraEstimadas,
-    tarifaManoObraHora,
-    costoTransporte,
-    margenPct,
-  });
+  const { calculo, horasManoObraEstimadas } = await calcularConMateriales(db, data.items, data);
 
   return db.transaction(async (tx) => {
     const [cotizacion] = await tx
@@ -63,6 +92,7 @@ export async function crearCotizacion(db: Database, input: CrearCotizacionInput)
         costoTransporte: calculo.costoTransporte,
         margenPctAplicado: calculo.margenPctAplicado,
         costoMaterialesTotal: calculo.costoMaterialesTotal,
+        descuentoMonto: calculo.descuentoMonto,
         precioFinal: calculo.precioFinal,
         origen: data.origen,
       })
@@ -74,6 +104,64 @@ export async function crearCotizacion(db: Database, input: CrearCotizacionInput)
       .values(
         calculo.items.map((item) => ({
           cotizacionId: cotizacionRow.id,
+          materialId: item.materialId,
+          cantidad: item.cantidad,
+          costoUnitarioSnapshot: item.costoUnitarioSnapshot,
+          subtotal: item.subtotal,
+        })),
+      )
+      .returning();
+
+    return { ...cotizacionRow, items };
+  });
+}
+
+// Solo permitido en estado "borrador": una vez enviada/aceptada, el precio
+// no debe cambiar por debajo del cliente (ver CotizacionNoEditableError).
+// Reemplaza los items existentes (no hace merge) y recalcula todo desde
+// cero, igual que crearCotizacion.
+export async function actualizarCotizacion(
+  db: Database,
+  id: number,
+  input: ActualizarCotizacionInput,
+) {
+  const data = actualizarCotizacionInputSchema.parse(input);
+
+  const [existente] = await db.select().from(cotizaciones).where(eq(cotizaciones.id, id));
+  if (!existente) throw new CotizacionNoEncontradaError(id);
+  if (existente.estado !== "borrador") {
+    throw new CotizacionNoEditableError(id, existente.estado);
+  }
+
+  const { calculo, horasManoObraEstimadas } = await calcularConMateriales(db, data.items, data);
+
+  return db.transaction(async (tx) => {
+    const [cotizacion] = await tx
+      .update(cotizaciones)
+      .set({
+        nombreEvento: data.nombreEvento,
+        tipoEvento: data.tipoEvento,
+        imagenReferenciaUrl: data.imagenReferenciaUrl,
+        horasManoObraEstimadas: new Decimal(horasManoObraEstimadas).toFixed(2),
+        costoManoObra: calculo.costoManoObra,
+        costoTransporte: calculo.costoTransporte,
+        margenPctAplicado: calculo.margenPctAplicado,
+        costoMaterialesTotal: calculo.costoMaterialesTotal,
+        descuentoMonto: calculo.descuentoMonto,
+        precioFinal: calculo.precioFinal,
+        updatedAt: new Date(),
+      })
+      .where(eq(cotizaciones.id, id))
+      .returning();
+    const cotizacionRow = cotizacion!;
+
+    await tx.delete(cotizacionItems).where(eq(cotizacionItems.cotizacionId, id));
+
+    const items = await tx
+      .insert(cotizacionItems)
+      .values(
+        calculo.items.map((item) => ({
+          cotizacionId: id,
           materialId: item.materialId,
           cantidad: item.cantidad,
           costoUnitarioSnapshot: item.costoUnitarioSnapshot,

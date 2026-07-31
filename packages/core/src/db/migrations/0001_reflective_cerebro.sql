@@ -1,0 +1,2 @@
+ALTER TABLE "cotizaciones" ADD COLUMN "descuento_monto" numeric(12, 2) DEFAULT '0' NOT NULL;--> statement-breakpoint
+ALTER TABLE "cotizaciones" ADD CONSTRAINT "cotizaciones_descuento_monto_check" CHECK ("cotizaciones"."descuento_monto" >= 0);

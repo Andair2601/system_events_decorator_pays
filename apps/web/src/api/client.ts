@@ -84,14 +84,35 @@ export const api = {
       tarifaManoObraHora?: number;
       costoTransporte?: number;
       margenPct?: number;
+      descuentoMonto?: number;
     }) =>
       request<CotizacionConItems>("/cotizaciones", { method: "POST", body: JSON.stringify(input) }),
+    // Solo funciona si la cotización está en "borrador" (la API responde
+    // 409 si no); el panel ya filtra el botón de editar por estado.
+    actualizar: (
+      id: number,
+      input: {
+        nombreEvento: string;
+        tipoEvento: string;
+        items: { materialId: number; cantidad: number }[];
+        horasManoObraEstimadas?: number;
+        tarifaManoObraHora?: number;
+        costoTransporte?: number;
+        margenPct?: number;
+        descuentoMonto?: number;
+      },
+    ) =>
+      request<CotizacionConItems>(`/cotizaciones/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
     actualizarEstado: (id: number, estado: string) =>
       request<Cotizacion>(`/cotizaciones/${id}/estado`, {
         method: "PATCH",
         body: JSON.stringify({ estado }),
       }),
-    pdfUrl: (id: number) => `${API_URL}/cotizaciones/${id}/pdf`,
+    pdfUrl: (id: number, vista: "interno" | "cliente" = "interno") =>
+      `${API_URL}/cotizaciones/${id}/pdf${vista === "cliente" ? "?vista=cliente" : ""}`,
   },
 
   reservas: {

@@ -1,5 +1,6 @@
 import { Decimal } from "decimal.js";
 import { z } from "zod";
+import { DescuentoInvalidoError } from "./errors.js";
 
 const montoSchema = z.union([z.number(), z.string()]);
 
@@ -19,6 +20,7 @@ export const calcularCotizacionInputSchema = z.object({
   tarifaManoObraHora: montoSchema,
   costoTransporte: montoSchema.default(0),
   margenPct: montoSchema,
+  descuentoMonto: montoSchema.default(0),
 });
 // z.input (no z.infer/z.output): horasManoObraEstimadas y costoTransporte
 // tienen .default(), así que deben quedar opcionales en el tipo de entrada
@@ -41,6 +43,7 @@ export interface CotizacionCalculada {
   /** materiales + mano de obra + transporte, antes de aplicar margen */
   baseCosto: string;
   margenMonto: string;
+  descuentoMonto: string;
   precioFinal: string;
 }
 
@@ -77,7 +80,15 @@ export function calcularCotizacion(input: CalcularCotizacionInput): CotizacionCa
 
   const baseCosto = costoMaterialesTotal.plus(costoManoObra).plus(costoTransporte);
   const margenMonto = baseCosto.times(margenPct).dividedBy(100);
-  const precioFinal = baseCosto.plus(margenMonto);
+  const descuentoMonto = new Decimal(parsed.descuentoMonto);
+  if (descuentoMonto.isNegative()) {
+    throw new DescuentoInvalidoError("El descuento no puede ser negativo");
+  }
+  const subtotalConMargen = baseCosto.plus(margenMonto);
+  if (descuentoMonto.greaterThan(subtotalConMargen)) {
+    throw new DescuentoInvalidoError("El descuento no puede ser mayor al total de la cotización");
+  }
+  const precioFinal = subtotalConMargen.minus(descuentoMonto);
 
   return {
     items,
@@ -87,6 +98,7 @@ export function calcularCotizacion(input: CalcularCotizacionInput): CotizacionCa
     margenPctAplicado: margenPct.toFixed(2),
     baseCosto: baseCosto.toFixed(2),
     margenMonto: margenMonto.toFixed(2),
+    descuentoMonto: descuentoMonto.toFixed(2),
     precioFinal: precioFinal.toFixed(2),
   };
 }

@@ -4,8 +4,13 @@ import { guardarConfiguracionCosteo } from "../configuracion/service.js";
 import type { Database } from "../db/types.js";
 import { crearMaterial } from "../materiales/service.js";
 import { createTestDb } from "../test/testDb.js";
-import { CotizacionNoEncontradaError, MaterialInexistenteError } from "./errors.js";
 import {
+  CotizacionNoEditableError,
+  CotizacionNoEncontradaError,
+  MaterialInexistenteError,
+} from "./errors.js";
+import {
+  actualizarCotizacion,
   actualizarEstadoCotizacion,
   crearCotizacion,
   listarCotizaciones,
@@ -148,5 +153,64 @@ describe("cotizaciones.service", () => {
     await expect(actualizarEstadoCotizacion(db, 9999, "aceptada")).rejects.toBeInstanceOf(
       CotizacionNoEncontradaError,
     );
+  });
+
+  it("permite editar una cotización en borrador y recalcula todo, reemplazando los items", async () => {
+    const { cliente, globo, arco } = await seedBase(db);
+    const cotizacion = await crearCotizacion(db, {
+      clienteId: cliente.id,
+      nombreEvento: "Cumple de Mateo",
+      tipoEvento: "cumpleanos_infantil",
+      items: [{ materialId: globo.id, cantidad: 10 }],
+    });
+    // materiales 10*0.8=8; +transporte 15 (default) = 23; margen 30% = 6.9 -> 29.90
+    expect(cotizacion.precioFinal).toBe("29.90");
+
+    const editada = await actualizarCotizacion(db, cotizacion.id, {
+      nombreEvento: "Cumple de Mateo (actualizado)",
+      tipoEvento: "cumpleanos_infantil",
+      items: [{ materialId: arco.id, cantidad: 2 }],
+      descuentoMonto: 10,
+    });
+
+    expect(editada.nombreEvento).toBe("Cumple de Mateo (actualizado)");
+    expect(editada.items).toHaveLength(1);
+    expect(editada.items[0]?.materialId).toBe(arco.id);
+    // materiales: 2*45=90; +transporte 15 (default) = 105; margen 30% = 31.5 -> 136.5; -10 descuento
+    expect(editada.costoMaterialesTotal).toBe("90.00");
+    expect(editada.descuentoMonto).toBe("10.00");
+    expect(editada.precioFinal).toBe("126.50");
+
+    const releida = await obtenerCotizacion(db, cotizacion.id);
+    expect(releida?.items).toHaveLength(1);
+  });
+
+  it("rechaza editar una cotización que no está en borrador", async () => {
+    const { cliente, globo } = await seedBase(db);
+    const cotizacion = await crearCotizacion(db, {
+      clienteId: cliente.id,
+      nombreEvento: "Evento X",
+      tipoEvento: "otro",
+      items: [{ materialId: globo.id, cantidad: 1 }],
+    });
+    await actualizarEstadoCotizacion(db, cotizacion.id, "aceptada");
+
+    await expect(
+      actualizarCotizacion(db, cotizacion.id, {
+        nombreEvento: "Evento X editado",
+        tipoEvento: "otro",
+        items: [{ materialId: globo.id, cantidad: 2 }],
+      }),
+    ).rejects.toBeInstanceOf(CotizacionNoEditableError);
+  });
+
+  it("lanza CotizacionNoEncontradaError al editar un id inexistente", async () => {
+    await expect(
+      actualizarCotizacion(db, 9999, {
+        nombreEvento: "X",
+        tipoEvento: "otro",
+        items: [{ materialId: 1, cantidad: 1 }],
+      }),
+    ).rejects.toBeInstanceOf(CotizacionNoEncontradaError);
   });
 });

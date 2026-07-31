@@ -4,7 +4,9 @@ import { ZodError } from "zod";
 import {
   ClienteNoEncontradoError,
   CotizacionNoAceptadaError,
+  CotizacionNoEditableError,
   CotizacionNoEncontradaError,
+  DescuentoInvalidoError,
   MaterialInexistenteError,
   MaterialNoEncontradoError,
   ReservaNoEncontradaError,
@@ -19,7 +21,11 @@ export function handleError(err: Error, c: Context) {
   if (err instanceof ZodError) {
     return c.json({ error: "Datos inválidos", detalles: err.issues }, 400);
   }
-  if (err instanceof BadRequestError || err instanceof MaterialInexistenteError) {
+  if (
+    err instanceof BadRequestError ||
+    err instanceof MaterialInexistenteError ||
+    err instanceof DescuentoInvalidoError
+  ) {
     return c.json({ error: err.message }, 400);
   }
   // c.req.json() lanza SyntaxError nativo cuando el body no es JSON válido;
@@ -35,7 +41,7 @@ export function handleError(err: Error, c: Context) {
   ) {
     return c.json({ error: err.message }, 404);
   }
-  if (err instanceof CotizacionNoAceptadaError) {
+  if (err instanceof CotizacionNoAceptadaError || err instanceof CotizacionNoEditableError) {
     return c.json({ error: err.message }, 409);
   }
   if (err instanceof HTTPException) {
