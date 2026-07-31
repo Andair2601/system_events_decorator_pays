@@ -36,6 +36,55 @@ function filaTabla(
   });
 }
 
+type RedSocial = "whatsapp" | "instagram" | "facebook";
+
+// Sin acceso a los logos oficiales de cada red (y para no usarlos sin
+// derechos): íconos vectoriales simplificados pero reconocibles, dibujados
+// a mano con las primitivas de pdfkit en vez de imágenes.
+function dibujarIconoRedSocial(
+  doc: PDFKit.PDFDocument,
+  tipo: RedSocial,
+  cx: number,
+  cy: number,
+  r: number,
+) {
+  const colores: Record<RedSocial, string> = {
+    whatsapp: "#25D366",
+    instagram: "#C13584",
+    facebook: "#1877F2",
+  };
+  doc.save();
+  doc.circle(cx, cy, r).fill(colores[tipo]);
+  if (tipo === "facebook") {
+    doc
+      .fillColor("#ffffff")
+      .font("Helvetica-Bold")
+      .fontSize(r * 1.3)
+      .text("f", cx - r * 0.28, cy - r * 0.62, { lineBreak: false });
+  } else if (tipo === "whatsapp") {
+    const bw = r * 1.15;
+    const bh = r * 0.9;
+    doc
+      .roundedRect(cx - bw / 2, cy - bh / 2 - r * 0.1, bw, bh, bh * 0.3)
+      .fill("#ffffff");
+    doc
+      .polygon(
+        [cx - bw * 0.18, cy + bh / 2 - r * 0.1],
+        [cx + bw * 0.02, cy + bh / 2 - r * 0.1],
+        [cx - bw * 0.18, cy + bh / 2 + r * 0.32],
+      )
+      .fill("#ffffff");
+  } else {
+    doc
+      .roundedRect(cx - r * 0.55, cy - r * 0.55, r * 1.1, r * 1.1, r * 0.28)
+      .lineWidth(1.2)
+      .stroke("#ffffff");
+    doc.circle(cx, cy, r * 0.28).lineWidth(1.2).stroke("#ffffff");
+    doc.circle(cx + r * 0.35, cy - r * 0.35, r * 0.07).fill("#ffffff");
+  }
+  doc.restore();
+}
+
 // Genera el PDF de una cotización. Dos vistas del mismo total:
 // - "interno" (default): desglose real, incluye el % de margen y el costo
 //   unitario/subtotal de cada material — para uso propio del negocio.
@@ -61,7 +110,7 @@ export async function generarCotizacionPdf(
     // detrás de todo lo demás — pdfkit no tiene z-index, el orden de
     // dibujo es el orden de apilado.
     const marcaAguaTam = 320;
-    doc.opacity(0.06);
+    doc.opacity(0.08);
     doc.image(logo, (doc.page.width - marcaAguaTam) / 2, (doc.page.height - marcaAguaTam) / 2, {
       width: marcaAguaTam,
       height: marcaAguaTam,
@@ -86,21 +135,53 @@ export async function generarCotizacionPdf(
         MARGEN + 26,
       );
     doc.fillColor("#000000");
+    const filaClienteY = MARGEN + logoHeaderTam + 18;
     doc.x = MARGEN;
-    doc.y = MARGEN + logoHeaderTam + 18;
+    doc.y = filaClienteY;
 
-    doc.font("Helvetica-Bold").fontSize(12).text("Cliente");
+    const anchoColIzquierda = 250; // deja espacio libre a la derecha para las redes sociales
+    doc.font("Helvetica-Bold").fontSize(12).text("Cliente", { width: anchoColIzquierda });
     doc.font("Helvetica").fontSize(10);
-    doc.text(data.cliente.nombre);
-    doc.text(data.cliente.telefono);
-    if (data.cliente.email) doc.text(data.cliente.email);
+    doc.text(data.cliente.nombre, { width: anchoColIzquierda });
+    doc.text(data.cliente.telefono, { width: anchoColIzquierda });
+    if (data.cliente.email) doc.text(data.cliente.email, { width: anchoColIzquierda });
     doc.moveDown(1);
 
-    doc.font("Helvetica-Bold").fontSize(12).text("Evento");
+    doc.font("Helvetica-Bold").fontSize(12).text("Evento", { width: anchoColIzquierda });
     doc.font("Helvetica").fontSize(10);
-    doc.text(data.nombreEvento);
-    doc.text(`Tipo: ${data.tipoEvento.replace(/_/g, " ")}`);
+    doc.text(data.nombreEvento, { width: anchoColIzquierda });
+    doc.text(`Tipo: ${data.tipoEvento.replace(/_/g, " ")}`, { width: anchoColIzquierda });
     doc.moveDown(1.5);
+    // doc.text con coordenadas explícitas igual actualiza doc.x/doc.y; se
+    // guarda dónde quedó el flujo de la columna izquierda para restaurarlo
+    // después de dibujar las redes sociales (columna derecha, posiciones
+    // explícitas), y que "Materiales" no arranque en el lugar equivocado.
+    const flujoXTrasEvento = doc.x;
+    const flujoYTrasEvento = doc.y;
+
+    // Redes sociales: aprovecha el espacio en blanco a la derecha de
+    // Cliente/Evento, a la misma altura.
+    const redSocialX = MARGEN + 300;
+    const iconoR = 7;
+    const redes: { tipo: RedSocial; texto: string }[] = [
+      { tipo: "whatsapp", texto: "+51 961 323 186" },
+      { tipo: "instagram", texto: "@banana.decoparty" },
+      { tipo: "facebook", texto: "Banana Decoraciones - Trujillo" },
+    ];
+    let redY = filaClienteY + 4;
+    for (const red of redes) {
+      dibujarIconoRedSocial(doc, red.tipo, redSocialX + iconoR, redY + iconoR, iconoR);
+      doc
+        .font("Helvetica")
+        .fontSize(9)
+        .fillColor("#000000")
+        .text(red.texto, redSocialX + iconoR * 2 + 8, redY + iconoR - 4.5, {
+          width: TABLA_DERECHA - (redSocialX + iconoR * 2 + 8),
+        });
+      redY += iconoR * 2 + 12;
+    }
+    doc.x = flujoXTrasEvento;
+    doc.y = flujoYTrasEvento;
 
     doc.font("Helvetica-Bold").fontSize(12).text("Materiales");
     doc.moveDown(0.5);
@@ -142,10 +223,9 @@ export async function generarCotizacionPdf(
     const resumenLabelX = MARGEN + 150;
     const resumenLabelW = resumenValorX - resumenLabelX;
 
-    // La altura de fila no es fija: etiquetas largas como "Servicio de
-    // decoración (diseño y producción)" pueden partirse en más de una
-    // línea, y con una altura fija la siguiente fila (Total) quedaba
-    // superpuesta encima del texto.
+    // La altura de fila no es fija: alguna etiqueta larga puede partirse
+    // en más de una línea, y con una altura fija la siguiente fila (Total)
+    // quedaba superpuesta encima del texto.
     function lineaResumen(etiqueta: string, valor: string, negrita = false) {
       doc.font(negrita ? "Helvetica-Bold" : "Helvetica").fontSize(negrita ? 13 : 10);
       const fila = doc.y;
@@ -163,17 +243,12 @@ export async function generarCotizacionPdf(
 
     lineaResumen("Materiales", `${MONEDA} ${data.costoMaterialesTotal}`);
     lineaResumen(
-      vista === "cliente"
-        ? `Instalación y montaje (${data.horasManoObraEstimadas} h)`
-        : `Mano de obra (${data.horasManoObraEstimadas} h)`,
+      vista === "cliente" ? "Instalación y montaje" : `Mano de obra (${data.horasManoObraEstimadas} h)`,
       `${MONEDA} ${data.costoManoObra}`,
     );
     lineaResumen("Transporte", `${MONEDA} ${data.costoTransporte}`);
     if (vista === "cliente") {
-      lineaResumen(
-        "Servicio de decoración (diseño y producción)",
-        `${MONEDA} ${margenMonto.toFixed(2)}`,
-      );
+      lineaResumen("Servicio de decoración", `${MONEDA} ${margenMonto.toFixed(2)}`);
     } else {
       lineaResumen("Margen aplicado", `${data.margenPctAplicado}%`);
     }
