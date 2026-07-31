@@ -14,11 +14,15 @@ Cliente HTTP
 API Gateway HTTP API (deco-eventos-{ambiente}-api-gateway)
    │
    ▼
-Lambda "deco-eventos-{ambiente}-api" (Node 20, ARM64, Hono vía hono/aws-lambda)
-   │  (dentro de la VPC, subred aislada, sin acceso a internet)
+Lambda "deco-eventos-{ambiente}-api" (Node 24, ARM64, Hono vía hono/aws-lambda)
+   │  (dentro de la VPC, subred aislada, sin acceso a internet, SSL)
    ▼
 RDS Postgres "deco-eventos-{ambiente}-db" (db.t4g.micro, Single-AZ)
 ```
+
+Además, un tercer Lambda `deco-eventos-{ambiente}-migrate` (misma VPC/SG,
+sin exponerse vía API Gateway) para aplicar migraciones — ver sección
+"Migraciones" más abajo.
 
 - **VPC sin NAT Gateway ni Internet Gateway**: Lambda solo necesita hablar
   con RDS dentro de la misma VPC, así que alcanza con subredes
@@ -36,6 +40,36 @@ RDS Postgres "deco-eventos-{ambiente}-db" (db.t4g.micro, Single-AZ)
   (`/aws/lambda/deco-eventos-{ambiente}-api`).
 - **Presupuesto**: un `AWS Budget` mensual por ambiente con alertas por
   email al 80% y 100% del gasto esperado.
+- **SSL obligatorio con RDS**: la instancia exige conexiones cifradas
+  (`no pg_hba.conf entry ... no encryption` si no se usa). Los Lambdas se
+  conectan con `DB_SSL=require` (ver `packages/core/src/db/client.ts`);
+  el Postgres local de `docker-compose` no lo requiere, así que esa
+  variable solo se setea en la stack de CDK, nunca en `.env` local.
+
+## Migraciones
+
+`deco-eventos-{ambiente}-migrate` es un Lambda separado (mismo acceso a
+la VPC/RDS que la API, sin ruta pública) que corre
+`drizzle-orm/postgres-js/migrator` contra las migraciones de
+`packages/core/src/db/migrations`. **No se invoca automáticamente en cada
+deploy** — decisión explícita: la alternativa (Custom Resource de CDK que
+corra la migración dentro del propio deploy) es más cómoda pero más
+frágil, porque una migración fallida puede trabar o hacer rollback de
+todo el stack, no solo del cambio de esquema.
+
+Se corre a mano después de un deploy con cambios de esquema:
+
+```
+aws lambda invoke --profile deco-eventos --function-name deco-eventos-{ambiente}-migrate --region us-east-1 out.json
+cat out.json   # {"ok":true} si salió bien
+```
+
+Las migraciones (`.sql` + carpeta `meta/`) no son código JS, así que
+esbuild no las empaqueta solo: `infra/lib/deco-eventos-stack.ts` las
+copia al bundle con un `commandHook` que invoca
+`infra/lib/copy-migrations.mjs` (un script propio, no `cp` ni `node -e`
+inline, para no depender de cómo cada shell —cmd.exe en Windows vs sh en
+Linux/Mac— maneja el anidamiento de comillas).
 
 ## Por qué Secrets Manager y no SSM Parameter Store
 
@@ -53,8 +87,9 @@ El handler (`packages/api/src/lambda.ts`) se empaqueta con `esbuild` local
 trae archivos de datos de fuentes (`.afm`) que esbuild no sabe empaquetar
 dentro de un bundle; por eso se instala como dependencia real del paquete
 Lambda (`bundling.nodeModules: ["pdfkit"]`) en vez de compilarse inline,
-preservando esos archivos. Verificado con `cdk synth`: el bundle final
-incluye `node_modules/pdfkit` completo con sus 14 archivos `.afm`.
+preservando esos archivos. Verificado con `cdk synth` (bundle incluye
+`node_modules/pdfkit` con sus 14 `.afm`) y contra el Lambda ya desplegado
+en AWS (`GET /cotizaciones/:id/pdf` devolvió un PDF válido de verdad).
 
 ## Costo mensual estimado (por ambiente)
 
@@ -74,13 +109,23 @@ compartido entre ambientes) agregan centavos.
 
 ## Modelo de permisos IAM
 
-Dos capas, ver el mensaje donde se compartió la política exacta:
+Dos capas:
 
 1. **Usuario IAM `deco-eventos-deployer`** (credenciales que usa quien
-   despliega): solo puede gestionar el stack `CDKToolkit` y stacks que
-   empiecen con `deco-eventos-*`, y asumir los roles que crea
-   `cdk bootstrap` (`cdk-hnb659fds-*-role-*`). No tiene permisos directos
-   sobre EC2, RDS, Lambda, etc.
+   despliega): gestiona el stack `CDKToolkit` y stacks que empiecen con
+   `deco-eventos-*`, y asume los roles que crea `cdk bootstrap`
+   (`cdk-hnb659fds-*-role-*`). No tiene permisos directos sobre EC2, RDS,
+   etc. — esos los ejerce el rol de CloudFormation, no el usuario.
+   Además de la política inicial, se agregaron dos statements de solo
+   lectura/invocación necesarios para operar después del deploy (no para
+   desplegar en sí):
+   - `lambda:InvokeFunction` en `arn:...:function:deco-eventos-*` — para
+     poder correr el Lambda de migraciones a mano.
+   - `logs:GetLogEvents`, `logs:FilterLogEvents`,
+     `logs:DescribeLogStreams`, `logs:DescribeLogGroups` en
+     `arn:...:log-group:/aws/lambda/deco-eventos-*:*` — para poder
+     diagnosticar errores de los Lambdas sin depender solo de lo que
+     devuelve `aws lambda invoke`.
 2. **Roles de CloudFormation** (creados por `cdk bootstrap`, solo
    asumibles por CloudFormation): estos sí tienen permisos amplios,
    porque son los que efectivamente crean VPC/RDS/Lambda/API Gateway
@@ -95,14 +140,35 @@ Dos capas, ver el mensaje donde se compartió la política exacta:
    usuario, y confirmación explícita antes de `cdk deploy
    deco-eventos-prod`. Nunca automático.
 
-## Pendiente (no implementado todavía)
+## Problemas reales encontrados en el primer deploy (y su fix)
 
-- **Migraciones de base de datos contra RDS**: como RDS no es accesible
-  públicamente y no hay NAT/bastion, todavía no hay un mecanismo para
-  correr `drizzle-kit migrate` contra el RDS real. Opciones a evaluar
-  juntos: (a) un Custom Resource de CDK que corra las migraciones en cada
-  deploy usando un Lambda dentro de la misma VPC, o (b) un túnel puntual
-  vía SSM Session Manager desde la máquina local. Se decide antes del
-  primer deploy a `dev`.
+Quedan documentados porque son errores concretos que costó diagnosticar,
+no hipotéticos — útil si algo similar vuelve a pasar en `prod`:
+
+1. **Descripción de security group con `>`**: `lambdaSg.connections
+   .allowTo(dbSg, ec2.Port.tcp(5432), "Lambda -> Postgres")` — EC2
+   rechaza `>` en descripciones de reglas (`InvalidRequest`). Fix: sin
+   caracteres especiales en la descripción.
+2. **Versión de Postgres retirada**: `PostgresEngineVersion.VER_16_4`
+   dejó de estar disponible en RDS (`Cannot find version 16.4`). Fix: se
+   usa `VER_16` (sin minor fijo) para que RDS tome el default vigente de
+   la rama 16 y no se rompa de nuevo cuando retiren otro minor.
+3. **Comillas anidadas en Windows**: el `commandHook` de bundling corre
+   vía `cmd.exe /c ...`, y `node -e "...JSON.stringify..."` con comillas
+   dobles anidadas rompía el parseo de `cmd.exe` (no de Node). Fix: un
+   script propio (`copy-migrations.mjs`) invocado con rutas como
+   argumentos, sin código inline entre comillas.
+4. **RDS exige SSL**: el error real (`no pg_hba.conf entry for host ...,
+   no encryption`) solo apareció al capturar explícitamente
+   `err.cause.message` del `PostgresError` — por defecto esa propiedad no
+   es enumerable y `Object.entries(err)` no la mostraba, así que el error
+   se veía como un genérico `28000` sin explicación. Fix funcional:
+   `DB_SSL=require` en los Lambdas. Fix de diagnóstico: capturar
+   propiedades del error por nombre explícito, no con `Object.entries`.
+
+## Pendiente
+
+- Deploy a `prod`: siempre con `cdk diff deco-eventos-prod` mostrado y
+  confirmación explícita antes de `cdk deploy deco-eventos-prod`.
 - Fase 2/3/4: álbum de fotos (S3+CloudFront), Google Calendar, SES,
   WhatsApp — no cubiertos por este stack todavía.

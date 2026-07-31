@@ -75,7 +75,7 @@ export class DecoEventosStack extends Stack {
       description: "RDS Postgres de deco-eventos",
     });
 
-    lambdaSg.connections.allowTo(dbSg, ec2.Port.tcp(5432), "Lambda -> Postgres");
+    lambdaSg.connections.allowTo(dbSg, ec2.Port.tcp(5432), "Lambda a Postgres");
 
     // --- Base de datos: credenciales autogeneradas en Secrets Manager
     // (nunca hardcodeadas). El connection string se resuelve como
@@ -85,6 +85,12 @@ export class DecoEventosStack extends Stack {
     // necesita salida a internet (evita pagar un VPC endpoint también).
     const dbCredentials = rds.Credentials.fromGeneratedSecret("deco_eventos_admin", {
       secretName: nombre("db-credentials"),
+      // El connection string se arma concatenando strings (ver más abajo),
+      // no con un parser de URL que haga percent-encoding; si el password
+      // generado incluyera alguno de estos caracteres reservados de URI
+      // rompería el parseo y la conexión fallaría con un error de auth
+      // engañoso (nos pasó: "28000 ClientAuthentication").
+      excludeCharacters: ' %+~`#$&*()|[]{}:;<>?!\'"/@\\',
     });
 
     const db = new rds.DatabaseInstance(this, "Database", {
@@ -93,7 +99,10 @@ export class DecoEventosStack extends Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [dbSg],
       engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16_4,
+        // Sin fijar el minor: AWS retira minors viejos (nos pasó con
+        // 16.4) y así siempre toma el minor por defecto vigente de la
+        // rama 16 en vez de romperse cuando lo retiren de nuevo.
+        version: rds.PostgresEngineVersion.VER_16,
       }),
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
       credentials: dbCredentials,
@@ -124,7 +133,7 @@ export class DecoEventosStack extends Stack {
       functionName: nombre("api"),
       entry: path.join(REPO_ROOT, "packages/api/src/lambda.ts"),
       handler: "handler",
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64, // mismo tipo de CPU que db.t4g, y más barato que x86_64
       memorySize: 256,
       timeout: Duration.seconds(10),
@@ -136,6 +145,7 @@ export class DecoEventosStack extends Stack {
       environment: {
         DATABASE_URL: databaseUrl,
         DB_POOL_MAX: "2",
+        DB_SSL: "require",
       },
       bundling: {
         // pdfkit trae archivos de fuentes (.afm) que esbuild no sabe
@@ -143,7 +153,50 @@ export class DecoEventosStack extends Stack {
         // preserva esos archivos junto al código.
         nodeModules: ["pdfkit"],
         minify: true,
-        target: "node20",
+        target: "node22", // esbuild aun no reconoce "node24"; node22 es compatible
+      },
+    });
+
+    // --- Lambda de migraciones: NO se invoca automáticamente en cada
+    // deploy (decisión explícita, ver docs/infra.md). Se corre a mano con
+    // `aws lambda invoke` cuando hay cambios de esquema pendientes.
+    const migrateLogGroup = new logs.LogGroup(this, "MigrateLogGroup", {
+      logGroupName: `/aws/lambda/${nombre("migrate")}`,
+      retention: logs.RetentionDays.TWO_WEEKS,
+      removalPolicy: esProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+    });
+
+    new NodejsFunction(this, "MigrateFunction", {
+      functionName: nombre("migrate"),
+      entry: path.join(REPO_ROOT, "packages/core/src/db/migrate-lambda.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 128,
+      timeout: Duration.seconds(60),
+      vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [lambdaSg],
+      logGroup: migrateLogGroup,
+      depsLockFilePath: path.join(REPO_ROOT, "pnpm-lock.yaml"),
+      environment: { DATABASE_URL: databaseUrl, DB_SSL: "require" },
+      bundling: {
+        minify: true,
+        target: "node22",
+        // Las migraciones de Drizzle son archivos .sql/.json, no código:
+        // esbuild no los toca, así que se copian al paquete a mano con un
+        // script propio (no "node -e ...") para no depender de cómo cada
+        // shell (cmd.exe en Windows vs sh en Linux/Mac) anida comillas.
+        commandHooks: {
+          beforeBundling: () => [],
+          beforeInstall: () => [],
+          afterBundling: (inputDir: string, outputDir: string) => {
+            const src = path.join(inputDir, "packages/core/src/db/migrations");
+            const dest = path.join(outputDir, "migrations");
+            const script = path.join(__dirname, "copy-migrations.mjs");
+            return [`node "${script}" "${src}" "${dest}"`];
+          },
+        },
       },
     });
 

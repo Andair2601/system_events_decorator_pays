@@ -15,7 +15,11 @@ export function getDb(): Database {
       throw new Error("DATABASE_URL no está definida");
     }
     const maxConnections = Number(process.env.DB_POOL_MAX ?? 2);
-    cachedClient = postgres(connectionString, { max: maxConnections });
+    // RDS exige SSL; el Postgres local de docker-compose no lo tiene
+    // configurado, así que esto solo se activa donde el infra lo pide
+    // (DB_SSL=require, seteado por infra/lib/deco-eventos-stack.ts).
+    const ssl = process.env.DB_SSL === "require" ? "require" : undefined;
+    cachedClient = postgres(connectionString, { max: maxConnections, ssl });
     cachedDb = drizzle(cachedClient, { schema });
   }
   return cachedDb;
