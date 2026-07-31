@@ -178,6 +178,7 @@ export default function ReservasPage() {
         </label>
       </div>
 
+      <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -247,6 +248,7 @@ export default function ReservasPage() {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

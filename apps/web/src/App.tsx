@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import MaterialesPage from "./pages/MaterialesPage.js";
 import ClientesPage from "./pages/ClientesPage.js";
@@ -14,16 +15,30 @@ const NAV_ITEMS = [
 ];
 
 export default function App() {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <div className="layout">
       <header className="topbar">
         <span className="brand">Decoración de Eventos</span>
-        <nav className="nav">
+        <button
+          type="button"
+          className="menu-toggle"
+          aria-label="Abrir menú"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+        <nav className={menuOpen ? "nav nav-open" : "nav"}>
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+              onClick={() => setMenuOpen(false)}
             >
               {item.label}
             </NavLink>

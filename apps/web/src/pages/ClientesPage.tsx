@@ -86,6 +86,7 @@ export default function ClientesPage() {
         </form>
       </div>
 
+      <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -113,6 +114,7 @@ export default function ClientesPage() {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

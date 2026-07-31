@@ -148,6 +148,7 @@ export default function MaterialesPage() {
         </label>
       </div>
 
+      <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -187,6 +188,7 @@ export default function MaterialesPage() {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

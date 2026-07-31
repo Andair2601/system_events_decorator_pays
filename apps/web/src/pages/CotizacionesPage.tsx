@@ -261,6 +261,7 @@ export default function CotizacionesPage() {
         </label>
       </div>
 
+      <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -334,6 +335,7 @@ export default function CotizacionesPage() {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
