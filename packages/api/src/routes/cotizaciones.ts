@@ -2,8 +2,10 @@ import { Hono } from "hono";
 import {
   actualizarEstadoCotizacion,
   crearCotizacion,
+  generarCotizacionPdf,
   listarCotizaciones,
   obtenerCotizacion,
+  obtenerCotizacionCompleta,
   type CotizacionEstado,
   type Database,
 } from "@deco-eventos/core";
@@ -33,6 +35,16 @@ export function cotizacionesRoutes(db: Database) {
     const cotizacion = await obtenerCotizacion(db, id);
     if (!cotizacion) return c.json({ error: "Cotización no encontrada" }, 404);
     return c.json(cotizacion);
+  });
+
+  app.get("/:id/pdf", async (c) => {
+    const id = parseIdParam(c.req.param("id"));
+    const cotizacion = await obtenerCotizacionCompleta(db, id);
+    if (!cotizacion) return c.json({ error: "Cotización no encontrada" }, 404);
+    const pdf = await generarCotizacionPdf(cotizacion);
+    c.header("Content-Type", "application/pdf");
+    c.header("Content-Disposition", `attachment; filename="cotizacion-${id}.pdf"`);
+    return c.body(new Uint8Array(pdf));
   });
 
   app.patch("/:id/estado", async (c) => {

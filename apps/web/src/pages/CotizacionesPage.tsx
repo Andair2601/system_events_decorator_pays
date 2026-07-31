@@ -269,6 +269,7 @@ export default function CotizacionesPage() {
             <th>Estado</th>
             <th>Precio final</th>
             <th>Cambiar estado</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -317,11 +318,16 @@ export default function CotizacionesPage() {
                   ))}
                 </select>
               </td>
+              <td>
+                <a className="btn secondary" href={api.cotizaciones.pdfUrl(c.id)} target="_blank" rel="noreferrer">
+                  Descargar PDF
+                </a>
+              </td>
             </tr>
           ))}
           {cotizaciones.length === 0 && (
             <tr>
-              <td colSpan={5} className="muted">
+              <td colSpan={6} className="muted">
                 No hay cotizaciones que coincidan con el filtro.
               </td>
             </tr>

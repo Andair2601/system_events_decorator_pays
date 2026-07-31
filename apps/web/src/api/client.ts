@@ -7,7 +7,7 @@ import type {
   Reserva,
 } from "../types.js";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 export class ApiError extends Error {
   constructor(
@@ -91,6 +91,7 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ estado }),
       }),
+    pdfUrl: (id: number) => `${API_URL}/cotizaciones/${id}/pdf`,
   },
 
   reservas: {

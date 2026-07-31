@@ -15,12 +15,14 @@
   "dependencies": {
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.44.6",
+    "pdfkit": "^0.15.2",
     "postgres": "^3.4.7",
     "zod": "^4.1.13"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.10",
     "@types/node": "^24.0.0",
+    "@types/pdfkit": "^0.13.9",
     "drizzle-kit": "^0.31.6",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3",

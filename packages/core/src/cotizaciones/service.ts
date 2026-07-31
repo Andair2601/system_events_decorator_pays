@@ -96,6 +96,37 @@ export async function obtenerCotizacion(db: Database, id: number) {
   return { ...cotizacion, items };
 }
 
+// Pensado para generar documentos (PDF hoy, email/WhatsApp en fases
+// posteriores): trae la cotización con el cliente y el nombre/unidad de
+// cada material, sin depender de llamadas adicionales desde quien la usa.
+export async function obtenerCotizacionCompleta(db: Database, id: number) {
+  const [cotizacion] = await db.select().from(cotizaciones).where(eq(cotizaciones.id, id));
+  if (!cotizacion) return null;
+
+  // clienteId es NOT NULL con FK "restrict", así que el cliente siempre existe.
+  const [cliente] = await db.select().from(clientes).where(eq(clientes.id, cotizacion.clienteId));
+
+  const items = await db
+    .select({
+      id: cotizacionItems.id,
+      materialId: cotizacionItems.materialId,
+      materialNombre: materiales.nombre,
+      materialUnidad: materiales.unidad,
+      cantidad: cotizacionItems.cantidad,
+      costoUnitarioSnapshot: cotizacionItems.costoUnitarioSnapshot,
+      subtotal: cotizacionItems.subtotal,
+    })
+    .from(cotizacionItems)
+    .innerJoin(materiales, eq(cotizacionItems.materialId, materiales.id))
+    .where(eq(cotizacionItems.cotizacionId, id));
+
+  return { ...cotizacion, cliente: cliente!, items };
+}
+
+export type CotizacionCompleta = NonNullable<
+  Awaited<ReturnType<typeof obtenerCotizacionCompleta>>
+>;
+
 export interface ListarCotizacionesOptions {
   clienteId?: number;
   estado?: CotizacionEstado;

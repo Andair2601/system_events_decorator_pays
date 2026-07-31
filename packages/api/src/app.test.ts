@@ -144,6 +144,12 @@ describe("API flujo completo: cotización -> reserva", () => {
     const resPago = await jsonRequest(`/reservas/${reserva.id}/pagos`, "POST", { monto: 100 });
     expect(resPago.status).toBe(200);
     expect((await readJson(resPago)).estadoPago).toBe("pagado");
+
+    const resPdf = await app.request(`/cotizaciones/${cotizacion.id}/pdf`);
+    expect(resPdf.status).toBe(200);
+    expect(resPdf.headers.get("content-type")).toBe("application/pdf");
+    const bytes = new Uint8Array(await resPdf.arrayBuffer());
+    expect(Buffer.from(bytes.subarray(0, 5)).toString("latin1")).toBe("%PDF-");
   });
 
   it("responde 409 si se intenta reservar desde una cotización no aceptada", async () => {
@@ -163,6 +169,11 @@ describe("API flujo completo: cotización -> reserva", () => {
       lugar: "X",
     });
     expect(resReserva.status).toBe(409);
+  });
+
+  it("responde 404 al pedir el PDF de una cotización inexistente", async () => {
+    const res = await app.request("/cotizaciones/9999/pdf");
+    expect(res.status).toBe(404);
   });
 
   it("responde 400 si la cotización referencia un material inexistente", async () => {

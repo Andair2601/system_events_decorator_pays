@@ -165,7 +165,8 @@ textarea:focus {
   outline-offset: 1px;
 }
 
-button {
+button,
+.btn {
   font: inherit;
   padding: 0.45rem 0.9rem;
   border-radius: 6px;
@@ -173,28 +174,32 @@ button {
   background: var(--color-primary);
   color: white;
   cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  line-height: 1.35;
 }
 
-button:hover {
+button:hover,
+.btn:hover {
   background: var(--color-primary-hover);
 }
 
-button.secondary {
+.secondary {
   background: transparent;
   color: var(--color-primary);
 }
 
-button.secondary:hover {
+.secondary:hover {
   background: #eef3f1;
 }
 
-button.danger {
+.danger {
   background: transparent;
   border-color: var(--color-danger);
   color: var(--color-danger);
 }
 
-button.danger:hover {
+.danger:hover {
   background: #fbeceb;
 }
 
