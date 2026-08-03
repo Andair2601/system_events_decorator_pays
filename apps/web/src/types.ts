@@ -72,6 +72,16 @@ export interface CotizacionConItems extends Cotizacion {
   items: CotizacionItem[];
 }
 
+export interface AlbumFoto {
+  id: number;
+  categoria: TipoEvento;
+  reservaId: number | null;
+  s3Key: string;
+  url: string;
+  destacada: boolean;
+  createdAt: string;
+}
+
 export interface Reserva {
   id: number;
   cotizacionId: number | null;

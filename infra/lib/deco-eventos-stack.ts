@@ -234,6 +234,32 @@ export class DecoEventosStack extends Stack {
       autoDeleteObjects: !esProd,
     });
 
+    // --- Fase 2: álbum de fotos. Bucket privado, servido públicamente vía
+    // la misma distribución de CloudFront del panel (behavior aparte, no
+    // una distribución nueva). El Lambda de la API nunca llama a S3 por
+    // red (está en subred aislada sin salida a internet): solo firma URLs
+    // de subida (operación local, sin llamada HTTP), y el navegador sube
+    // el archivo directo a S3. Por eso alcanza con un grant de IAM
+    // (permiso, no red) y no hace falta un VPC Gateway Endpoint.
+    const fotosBucket = new s3.Bucket(this, "FotosBucket", {
+      bucketName: `${nombre("fotos")}-${this.account}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: esProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      autoDeleteObjects: !esProd,
+      // El navegador sube el archivo directo a S3 con la URL prefirmada, así
+      // que S3 necesita permitir el preflight CORS del origen del panel. El
+      // origen real (dominio de CloudFront, o localhost en dev local) no se
+      // conoce en build-time del bucket ni vale la pena restringirlo acá: la
+      // seguridad la da la firma/expiración de la URL prefirmada, no el CORS.
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.PUT],
+          allowedOrigins: ["*"],
+          allowedHeaders: ["*"],
+        },
+      ],
+    });
+
     const panelDistribution = new cloudfront.Distribution(this, "PanelDistribution", {
       comment: nombre("panel"),
       defaultRootObject: "index.html",
@@ -242,15 +268,40 @@ export class DecoEventosStack extends Stack {
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
       },
+      // Fotos del álbum en el mismo dominio, bajo /fotos/*. El prefijo
+      // "fotos/" vive dentro de la propia key de S3 (ver packages/api/src/s3.ts,
+      // buildFotoKey) para que el path que reenvía CloudFront calce con el
+      // objeto real en el bucket.
+      additionalBehaviors: {
+        "/fotos/*": {
+          origin: origins.S3BucketOrigin.withOriginAccessControl(fotosBucket),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        },
+      },
       // React Router usa rutas del lado del cliente (/cotizaciones, etc.)
       // que no existen como objetos en S3; sin esto, refrescar en esas
       // rutas daría 403/404 en vez de cargar la app.
+      // Nota: esto aplica a toda la distribución, incluido /fotos/* — una
+      // foto realmente inexistente también se reescribe a index.html (200)
+      // en vez de un 404 real. Se ve como imagen rota en el <img> igual,
+      // así que se deja así por ahora (ver docs/infra.md).
       errorResponses: [
         { httpStatus: 403, responseHttpStatus: 200, responsePagePath: "/index.html" },
         { httpStatus: 404, responseHttpStatus: 200, responsePagePath: "/index.html" },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // solo edges NA/EU: el más barato
     });
+
+    fotosBucket.grantPut(apiFn);
+    apiFn.addEnvironment("ALBUM_FOTOS_BUCKET", fotosBucket.bucketName);
+    // Sin "/fotos" acá: buildFotoKey() ya genera keys con ese prefijo
+    // (ver packages/api/src/s3.ts), así que la URL pública es
+    // "<dominio>/" + key (que ya arranca con "fotos/").
+    apiFn.addEnvironment(
+      "ALBUM_FOTOS_BASE_URL",
+      `https://${panelDistribution.distributionDomainName}`,
+    );
 
     new s3deploy.BucketDeployment(this, "PanelDeployment", {
       sources: [s3deploy.Source.asset(path.join(REPO_ROOT, "apps/web/dist"))],

@@ -18,3 +18,6 @@ export * from "./cotizaciones/pdf.js";
 export * from "./reservas/schemas.js";
 export * from "./reservas/service.js";
 export * from "./reservas/errors.js";
+export * from "./album/schemas.js";
+export * from "./album/service.js";
+export * from "./album/errors.js";

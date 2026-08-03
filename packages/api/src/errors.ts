@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 import {
+  AlbumFotoNoEncontradaError,
   ClienteNoEncontradoError,
   CotizacionNoAceptadaError,
   CotizacionNoEditableError,
@@ -38,7 +39,8 @@ export function handleError(err: Error, c: Context) {
     err instanceof MaterialNoEncontradoError ||
     err instanceof ClienteNoEncontradoError ||
     err instanceof CotizacionNoEncontradaError ||
-    err instanceof ReservaNoEncontradaError
+    err instanceof ReservaNoEncontradaError ||
+    err instanceof AlbumFotoNoEncontradaError
   ) {
     return c.json({ error: err.message }, 404);
   }

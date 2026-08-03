@@ -13,7 +13,7 @@ export const MATERIAL_CATEGORIAS = [
 ] as const;
 export type MaterialCategoria = (typeof MATERIAL_CATEGORIAS)[number];
 
-export const MATERIAL_UNIDADES = ["pieza", "metro", "m2", "hora", "kit"] as const;
+export const MATERIAL_UNIDADES = ["pieza", "metro", "m2", "hora", "kit","unidad", "bolsa"] as const;
 export type MaterialUnidad = (typeof MATERIAL_UNIDADES)[number];
 
 export const TIPOS_EVENTO = [
@@ -44,11 +44,3 @@ export type ReservaEstado = (typeof RESERVA_ESTADOS)[number];
 
 export const RESERVA_ESTADOS_PAGO = ["pendiente", "parcial", "pagado"] as const;
 export type ReservaEstadoPago = (typeof RESERVA_ESTADOS_PAGO)[number];
-
-export const ALBUM_CATEGORIAS = [
-  "cumpleanos_infantil",
-  "baby_shower",
-  "gender_reveal",
-  "otro",
-] as const;
-export type AlbumCategoria = (typeof ALBUM_CATEGORIAS)[number];

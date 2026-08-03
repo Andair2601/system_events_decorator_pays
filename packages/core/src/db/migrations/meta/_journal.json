@@ -22,6 +22,20 @@
       "when": 1785794318698,
       "tag": "0002_damp_miss_america",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785797205204,
+      "tag": "0003_tired_screwball",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785797678741,
+      "tag": "0004_pink_killraven",
+      "breakpoints": true
     }
   ]
 }

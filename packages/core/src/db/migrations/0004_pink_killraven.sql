@@ -1,0 +1,2 @@
+ALTER TABLE "materiales" DROP CONSTRAINT "materiales_unidad_check";--> statement-breakpoint
+ALTER TABLE "materiales" ADD CONSTRAINT "materiales_unidad_check" CHECK ("materiales"."unidad" in ('pieza','metro','m2','hora','kit','unidad','bolsa'));

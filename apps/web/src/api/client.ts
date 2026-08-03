@@ -1,4 +1,5 @@
 import type {
+  AlbumFoto,
   Cliente,
   Cotizacion,
   CotizacionConItems,
@@ -131,4 +132,39 @@ export const api = {
     registrarPago: (id: number, monto: number) =>
       request<Reserva>(`/reservas/${id}/pagos`, { method: "POST", body: JSON.stringify({ monto }) }),
   },
+
+  album: {
+    listar: (opts: { categoria?: string; destacada?: boolean; reservaId?: number } = {}) =>
+      request<AlbumFoto[]>(`/album${query(opts)}`),
+    crear: (input: {
+      categoria: string;
+      s3Key: string;
+      url: string;
+      reservaId?: number;
+      destacada?: boolean;
+    }) => request<AlbumFoto>("/album", { method: "POST", body: JSON.stringify(input) }),
+    actualizar: (
+      id: number,
+      input: Partial<{ categoria: string; reservaId: number | null; destacada: boolean }>,
+    ) => request<AlbumFoto>(`/album/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+    eliminar: (id: number) => request<void>(`/album/${id}`, { method: "DELETE" }),
+    obtenerUploadUrl: (contentType: string) =>
+      request<{ uploadUrl: string; s3Key: string; publicUrl: string }>("/album/upload-url", {
+        method: "POST",
+        body: JSON.stringify({ contentType }),
+      }),
+  },
 };
+
+// Fuera de request(): esa función siempre manda Content-Type: application/json,
+// que rompería la firma SigV4 de la URL prefirmada (tiene que coincidir
+// exactamente con el contentType usado al pedirla). El navegador sube el
+// archivo directo a S3, sin pasar por la API.
+export async function subirArchivoS3(uploadUrl: string, file: File): Promise<void> {
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type },
+  });
+  if (!res.ok) throw new Error(`No se pudo subir el archivo (${res.status})`);
+}

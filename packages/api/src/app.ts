@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Database } from "@deco-eventos/core";
 import { handleError } from "./errors.js";
+import { albumRoutes } from "./routes/album.js";
 import { clientesRoutes } from "./routes/clientes.js";
 import { configuracionRoutes } from "./routes/configuracion.js";
 import { cotizacionesRoutes } from "./routes/cotizaciones.js";
@@ -24,6 +25,7 @@ export function createApp(db: Database) {
   app.route("/configuracion", configuracionRoutes(db));
   app.route("/cotizaciones", cotizacionesRoutes(db));
   app.route("/reservas", reservasRoutes(db));
+  app.route("/album", albumRoutes(db));
 
   return app;
 }

@@ -1,0 +1,2 @@
+ALTER TABLE "album_fotos" DROP CONSTRAINT "album_fotos_categoria_check";--> statement-breakpoint
+ALTER TABLE "album_fotos" ADD CONSTRAINT "album_fotos_categoria_check" CHECK ("album_fotos"."categoria" in ('cumpleanos_infantil','cumpleanos_adulto','baby_shower','gender_reveal','matrimonio','imposicion_casacas','promocion','compromiso','pedida_mano','aniversario','quince_anos','bautizo','otro'));

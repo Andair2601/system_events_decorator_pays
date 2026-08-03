@@ -357,3 +357,59 @@ details.detail summary {
   gap: 0.5rem;
   align-items: center;
 }
+
+.foto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.foto-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.foto-card img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+  background: var(--color-bg);
+}
+
+.foto-card.destacada {
+  border-color: var(--color-primary);
+  border-width: 2px;
+}
+
+.foto-card-body {
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.galeria {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.75rem;
+}
+
+.galeria-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.galeria-header h1 {
+  margin-top: 0.5rem;
+}
+
+.galeria-seccion {
+  margin-bottom: 2.5rem;
+}
+
+.galeria-seccion h2 {
+  text-transform: capitalize;
+}

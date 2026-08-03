@@ -13,7 +13,6 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 import {
-  ALBUM_CATEGORIAS,
   COTIZACION_ESTADOS,
   COTIZACION_ORIGENES,
   MATERIAL_CATEGORIAS,
@@ -175,7 +174,7 @@ export const albumFotos = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    check("album_fotos_categoria_check", sql`${table.categoria} in ('${sql.raw(ALBUM_CATEGORIAS.join("','"))}')`),
+    check("album_fotos_categoria_check", sql`${table.categoria} in ('${sql.raw(TIPOS_EVENTO.join("','"))}')`),
     index("idx_album_categoria").on(table.categoria),
   ],
 );

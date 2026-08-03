@@ -196,9 +196,84 @@ no hipotéticos — útil si algo similar vuelve a pasar en `prod`:
    `DB_SSL=require` en los Lambdas. Fix de diagnóstico: capturar
    propiedades del error por nombre explícito, no con `Object.entries`.
 
+## Álbum de fotos (Fase 2)
+
+Bucket S3 privado adicional (`deco-eventos-{ambiente}-fotos-{accountId}`),
+servido públicamente por la **misma** distribución de CloudFront del panel
+(`additionalBehaviors["/fotos/*"]`, origin propio vía OAC) — no se crea una
+segunda distribución.
+
+**El Lambda de la API nunca llama a S3 por red.** Sigue en subred aislada
+sin salida a internet; para subir/borrar objetos necesitaría alcanzar S3
+por HTTP, y eso exigiría un VPC Gateway Endpoint + reglas de egress
+nuevas. Se evitó ese costo/complejidad con este flujo:
+
+1. El navegador pide `POST /album/upload-url` con el `contentType` del
+   archivo.
+2. El Lambda **firma** una URL de subida (`PutObjectCommand` +
+   `getSignedUrl`) — esto es una operación criptográfica local (HMAC), no
+   hace ninguna llamada de red a AWS. Solo necesita el permiso IAM
+   (`fotosBucket.grantPut(apiFn)`, un policy attachment, no networking).
+3. El navegador sube el archivo **directo a S3** con esa URL.
+4. El navegador confirma con `POST /album` (categoria, s3Key, url,
+   reservaId?, destacada?) — inserción de fila normal, sin tocar S3.
+
+**CORS en el bucket**: el PUT desde el navegador dispara un preflight
+CORS que S3 rechaza por defecto (403 en el `OPTIONS`) — a diferencia de
+`curl`, que no hace preflight y por eso un test con `curl` contra la URL
+firmada puede pasar sin que el flujo real del navegador funcione. El
+bucket tiene `cors: [{ allowedMethods: ["PUT"], allowedOrigins: ["*"],
+allowedHeaders: ["*"] }]`; el origen queda abierto a propósito porque la
+seguridad real la da la firma/expiración de la URL prefirmada (5 min), no
+el CORS.
+
+**Prefijo de la key**: `buildFotoKey()` (`packages/api/src/s3.ts`) genera
+keys como `fotos/<uuid>.<ext>` — el prefijo `fotos/` vive dentro de la key
+misma, no se concatena aparte al construir la URL pública, porque el path
+que CloudFront reenvía al origen tiene que calzar exactamente con el
+objeto real en el bucket.
+
+**Borrar una foto no borra el objeto de S3**, solo la fila en
+`album_fotos` — decisión explícita para no necesitar que el Lambda
+alcance S3 por red. El objeto queda huérfano (invisible para la app, ya
+que nada referencia esa key) a un costo marginal de almacenamiento. Si
+algún día hace falta reconciliar/limpiar objetos huérfanos, tendría que
+ser un script corrido desde una máquina con internet normal, no desde
+este Lambda.
+
+**Limitación conocida (no resuelta)**: `errorResponses` (403/404 →
+`index.html`) es a nivel de distribución completa, no por behavior. Una
+foto realmente inexistente bajo `/fotos/*` también se reescribe a
+`index.html` con 200 en vez de un 404 real — se ve como imagen rota en el
+`<img>` de todas formas, así que se dejó así. Arreglarlo requeriría una
+CloudFront Function o una segunda distribución.
+
 ## Pendiente
 
 - Deploy a `prod`: siempre con `cdk diff deco-eventos-prod` mostrado y
   confirmación explícita antes de `cdk deploy deco-eventos-prod`.
-- Fase 2/3/4: álbum de fotos (S3+CloudFront), Google Calendar, SES,
-  WhatsApp — no cubiertos por este stack todavía.
+- Fase 3/4: Google Calendar, SES, WhatsApp — no cubiertos por este stack
+  todavía.
+- Reconciliación de objetos huérfanos en `deco-eventos-{ambiente}-fotos`
+  (ver sección de álbum de fotos arriba) — no implementado, no es
+  urgente al volumen actual.
+
+## Pines de versión de `@aws-sdk/*` (política de supply-chain de pnpm)
+
+`pnpm-workspace.yaml` fija `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`
+y sus dependencias transitivas (`@aws-sdk/core`, `credential-provider-*`,
+etc.) a versiones exactas publicadas hace unos días. Esto no es un
+capricho: pnpm (desde esta versión) rechaza por política de
+supply-chain (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`) instalar paquetes
+publicados muy recientemente, y el SDK de AWS saca releases de sus
+subpaquetes casi a diario. Fijar solo `client-s3`/`s3-request-presigner`
+en `package.json` **no alcanza**, porque sus dependencias transitivas
+tienen rangos semver propios (`^3.x`) que igual resuelven a lo último
+publicado. El bundling del Lambda (`cdk deploy`/`cdk diff`) corre
+`pnpm install` con el lockfile del repo, así que esta política se aplica
+también ahí, no solo en desarrollo local.
+
+Si en el futuro hace falta actualizar el SDK de AWS, hay que resolver
+versiones nuevas que ya tengan unos días de publicadas (no
+`^ultima-version`) y actualizar los `overrides` de `pnpm-workspace.yaml`
+en conjunto — actualizar solo `package.json` vuelve a romper el bundling.
