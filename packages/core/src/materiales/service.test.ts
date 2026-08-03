@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { crearCliente } from "../clientes/service.js";
+import { crearCotizacion } from "../cotizaciones/service.js";
 import type { Database } from "../db/types.js";
 import { createTestDb } from "../test/testDb.js";
-import { MaterialNoEncontradoError } from "./errors.js";
+import { MaterialEnUsoError, MaterialNoEncontradoError } from "./errors.js";
 import {
   actualizarMaterial,
   crearMaterial,
   desactivarMaterial,
+  eliminarMaterial,
   listarMateriales,
   obtenerMaterial,
   reactivarMaterial,
@@ -119,5 +122,40 @@ describe("materiales.service", () => {
 
     const reactivado = await reactivarMaterial(db, creado.id);
     expect(reactivado.activo).toBe(true);
+  });
+
+  it("elimina un material que nunca se usó en una cotización", async () => {
+    const creado = await crearMaterial(db, {
+      nombre: "Cinta decorativa",
+      categoria: "telas",
+      costoUnitario: 4,
+      unidad: "metro",
+    });
+
+    await eliminarMaterial(db, creado.id);
+    expect(await obtenerMaterial(db, creado.id)).toBeNull();
+  });
+
+  it("lanza MaterialNoEncontradoError al eliminar un id inexistente", async () => {
+    await expect(eliminarMaterial(db, 9999)).rejects.toBeInstanceOf(MaterialNoEncontradoError);
+  });
+
+  it("lanza MaterialEnUsoError al eliminar un material referenciado por una cotización", async () => {
+    const cliente = await crearCliente(db, { nombre: "Ana Pérez", telefono: "+51999111222" });
+    const globo = await crearMaterial(db, {
+      nombre: "Globo látex 12in",
+      categoria: "globos",
+      costoUnitario: 1,
+      unidad: "pieza",
+    });
+    await crearCotizacion(db, {
+      clienteId: cliente.id,
+      nombreEvento: "Cumple de Mateo",
+      tipoEvento: "cumpleanos_infantil",
+      items: [{ materialId: globo.id, cantidad: 10 }],
+    });
+
+    await expect(eliminarMaterial(db, globo.id)).rejects.toBeInstanceOf(MaterialEnUsoError);
+    expect(await obtenerMaterial(db, globo.id)).not.toBeNull();
   });
 });

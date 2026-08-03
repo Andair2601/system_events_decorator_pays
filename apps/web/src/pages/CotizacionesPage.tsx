@@ -8,6 +8,13 @@ interface ItemForm {
   cantidad: string;
 }
 
+const ESTADO_BADGE_CLASE: Record<string, string> = {
+  borrador: "badge",
+  enviada: "badge warning",
+  aceptada: "badge success",
+  rechazada: "badge danger",
+};
+
 const initialForm = {
   clienteId: "",
   nombreEvento: "",
@@ -379,7 +386,7 @@ export default function CotizacionesPage() {
               </td>
               <td>{clienteNombre(c.clienteId)}</td>
               <td>
-                <span className="badge">{c.estado}</span>
+                <span className={ESTADO_BADGE_CLASE[c.estado] ?? "badge"}>{c.estado}</span>
               </td>
               <td>{c.precioFinal}</td>
               <td>

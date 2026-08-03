@@ -17,6 +17,7 @@ export default function MaterialesPage() {
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [editandoId, setEditandoId] = useState<number | null>(null);
 
   async function cargar() {
     try {
@@ -36,21 +37,44 @@ export default function MaterialesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoriaFiltro, incluirInactivos]);
 
-  async function crear(ev: React.FormEvent) {
+  function cancelarEdicion() {
+    setEditandoId(null);
+    setForm(initialForm);
+  }
+
+  function iniciarEdicion(m: Material) {
+    setError(null);
+    setEditandoId(m.id);
+    setForm({
+      nombre: m.nombre,
+      categoria: m.categoria as typeof initialForm.categoria,
+      costoUnitario: m.costoUnitario,
+      unidad: m.unidad as typeof initialForm.unidad,
+    });
+  }
+
+  async function guardar(ev: React.FormEvent) {
     ev.preventDefault();
     setError(null);
     setGuardando(true);
     try {
-      await api.materiales.crear({
+      const datos = {
         nombre: form.nombre,
         categoria: form.categoria,
         costoUnitario: Number(form.costoUnitario),
         unidad: form.unidad,
-      });
-      setForm(initialForm);
+      };
+      if (editandoId) {
+        await api.materiales.actualizar(editandoId, datos);
+      } else {
+        await api.materiales.crear(datos);
+      }
+      cancelarEdicion();
       await cargar();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "No se pudo crear el material");
+      setError(
+        e instanceof ApiError ? e.message : `No se pudo ${editandoId ? "editar" : "crear"} el material`,
+      );
     } finally {
       setGuardando(false);
     }
@@ -67,14 +91,26 @@ export default function MaterialesPage() {
     }
   }
 
+  async function eliminar(m: Material) {
+    if (!confirm(`¿Eliminar "${m.nombre}"? Esta acción no se puede deshacer.`)) return;
+    setError(null);
+    try {
+      await api.materiales.eliminar(m.id);
+      if (editandoId === m.id) cancelarEdicion();
+      await cargar();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "No se pudo eliminar el material");
+    }
+  }
+
   return (
     <div>
       <h1>Catálogo de materiales</h1>
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card">
-        <h2>Nuevo material</h2>
-        <form onSubmit={crear} className="form-grid">
+        <h2>{editandoId ? `Editar material #${editandoId}` : "Nuevo material"}</h2>
+        <form onSubmit={guardar} className="form-grid">
           <label>
             Nombre
             <input
@@ -120,9 +156,16 @@ export default function MaterialesPage() {
               ))}
             </select>
           </label>
-          <button type="submit" disabled={guardando}>
-            {guardando ? "Guardando…" : "Agregar material"}
-          </button>
+          <div className="actions-row">
+            <button type="submit" disabled={guardando}>
+              {guardando ? "Guardando…" : editandoId ? "Guardar cambios" : "Agregar material"}
+            </button>
+            {editandoId && (
+              <button type="button" className="secondary" onClick={cancelarEdicion}>
+                Cancelar
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
@@ -173,9 +216,17 @@ export default function MaterialesPage() {
                 </span>
               </td>
               <td>
-                <button className="secondary" onClick={() => alternarActivo(m)}>
-                  {m.activo ? "Desactivar" : "Reactivar"}
-                </button>
+                <div className="actions-row">
+                  <button type="button" className="secondary" onClick={() => iniciarEdicion(m)}>
+                    Editar
+                  </button>
+                  <button type="button" className="secondary" onClick={() => alternarActivo(m)}>
+                    {m.activo ? "Desactivar" : "Reactivar"}
+                  </button>
+                  <button type="button" className="danger" onClick={() => eliminar(m)}>
+                    Eliminar
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

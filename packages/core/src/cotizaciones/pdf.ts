@@ -241,15 +241,20 @@ export async function generarCotizacionPdf(
     const margenMonto = baseCosto.times(data.margenPctAplicado).dividedBy(100);
     const descuentoMonto = new Decimal(data.descuentoMonto);
 
-    lineaResumen("Materiales", `${MONEDA} ${data.costoMaterialesTotal}`);
-    lineaResumen(
-      vista === "cliente" ? "Instalación y montaje" : `Mano de obra (${data.horasManoObraEstimadas} h)`,
-      `${MONEDA} ${data.costoManoObra}`,
-    );
-    lineaResumen("Transporte", `${MONEDA} ${data.costoTransporte}`);
     if (vista === "cliente") {
-      lineaResumen("Servicio de decoración", `${MONEDA} ${margenMonto.toFixed(2)}`);
+      // Un solo ítem "Servicio de decoración" (materiales + instalación y
+      // montaje + margen) para no desglosar costos internos al cliente; el
+      // total sigue cuadrando porque es el mismo baseCosto menos transporte,
+      // más el margen.
+      const servicioDecoracion = new Decimal(data.costoMaterialesTotal)
+        .plus(data.costoManoObra)
+        .plus(margenMonto);
+      lineaResumen("Servicio de decoración", `${MONEDA} ${servicioDecoracion.toFixed(2)}`);
+      lineaResumen("Transporte", `${MONEDA} ${data.costoTransporte}`);
     } else {
+      lineaResumen("Materiales", `${MONEDA} ${data.costoMaterialesTotal}`);
+      lineaResumen(`Mano de obra (${data.horasManoObraEstimadas} h)`, `${MONEDA} ${data.costoManoObra}`);
+      lineaResumen("Transporte", `${MONEDA} ${data.costoTransporte}`);
       lineaResumen("Margen aplicado", `${data.margenPctAplicado}%`);
     }
     if (descuentoMonto.greaterThan(0)) {

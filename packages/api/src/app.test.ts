@@ -92,6 +92,25 @@ describe("API materiales", () => {
     const resReactivar = await jsonRequest(`/materiales/${material.id}/reactivar`, "POST");
     expect((await readJson(resReactivar)).activo).toBe(true);
   });
+
+  it("elimina un material sin uso, y responde 409 si está referenciado por una cotización", async () => {
+    const { body: material } = await crearMaterialViaApi();
+    const resEliminar = await jsonRequest(`/materiales/${material.id}`, "DELETE");
+    expect(resEliminar.status).toBe(204);
+    expect((await app.request(`/materiales/${material.id}`)).status).toBe(404);
+
+    const { body: cliente } = await crearClienteViaApi();
+    const { body: enUso } = await crearMaterialViaApi({ nombre: "Globo en uso" });
+    await jsonRequest("/cotizaciones", "POST", {
+      clienteId: cliente.id,
+      nombreEvento: "Cumple de Mateo",
+      tipoEvento: "cumpleanos_infantil",
+      items: [{ materialId: enUso.id, cantidad: 5 }],
+    });
+
+    const resBloqueado = await jsonRequest(`/materiales/${enUso.id}`, "DELETE");
+    expect(resBloqueado.status).toBe(409);
+  });
 });
 
 describe("API configuración de costeo", () => {

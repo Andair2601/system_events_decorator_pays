@@ -2,7 +2,7 @@ import { Decimal } from "decimal.js";
 import { and, asc, eq } from "drizzle-orm";
 import type { Database } from "../db/types.js";
 import { materiales } from "../db/schema.js";
-import { MaterialNoEncontradoError } from "./errors.js";
+import { MaterialEnUsoError, MaterialNoEncontradoError } from "./errors.js";
 import {
   actualizarMaterialInputSchema,
   crearMaterialInputSchema,
@@ -86,4 +86,21 @@ export async function reactivarMaterial(db: Database, id: number) {
     .returning();
   if (!row) throw new MaterialNoEncontradoError(id);
   return row;
+}
+
+// Borrado real (no soft-delete): solo posible si el material nunca se usó en
+// ninguna cotización, porque cotizacion_items.material_id tiene FK
+// "restrict". Si Postgres rechaza el borrado por esa razón, se traduce a un
+// error de dominio que sugiere desactivar en vez de eliminar.
+export async function eliminarMaterial(db: Database, id: number) {
+  try {
+    const [row] = await db.delete(materiales).where(eq(materiales.id, id)).returning();
+    if (!row) throw new MaterialNoEncontradoError(id);
+    return row;
+  } catch (err) {
+    if (err instanceof MaterialNoEncontradoError) throw err;
+    const code = (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "23503") throw new MaterialEnUsoError(id);
+    throw err;
+  }
 }

@@ -54,6 +54,7 @@ export const api = {
       request<Material>(`/materiales/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
     desactivar: (id: number) => request<Material>(`/materiales/${id}/desactivar`, { method: "POST" }),
     reactivar: (id: number) => request<Material>(`/materiales/${id}/reactivar`, { method: "POST" }),
+    eliminar: (id: number) => request<void>(`/materiales/${id}`, { method: "DELETE" }),
   },
 
   clientes: {

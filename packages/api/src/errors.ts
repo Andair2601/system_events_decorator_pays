@@ -7,6 +7,7 @@ import {
   CotizacionNoEditableError,
   CotizacionNoEncontradaError,
   DescuentoInvalidoError,
+  MaterialEnUsoError,
   MaterialInexistenteError,
   MaterialNoEncontradoError,
   ReservaNoEncontradaError,
@@ -41,7 +42,11 @@ export function handleError(err: Error, c: Context) {
   ) {
     return c.json({ error: err.message }, 404);
   }
-  if (err instanceof CotizacionNoAceptadaError || err instanceof CotizacionNoEditableError) {
+  if (
+    err instanceof CotizacionNoAceptadaError ||
+    err instanceof CotizacionNoEditableError ||
+    err instanceof MaterialEnUsoError
+  ) {
     return c.json({ error: err.message }, 409);
   }
   if (err instanceof HTTPException) {

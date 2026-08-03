@@ -82,6 +82,10 @@ export interface Reserva {
   estado: ReservaEstado;
   estadoPago: ReservaEstadoPago;
   montoPagado: string;
+  // Derivados del precio_final de la cotización asociada (join); solo
+  // vienen presentes en las respuestas de listar/obtener.
+  montoTotal?: string | null;
+  montoPendiente?: string | null;
   calendarEventId: string | null;
   notas: string | null;
   createdAt: string;

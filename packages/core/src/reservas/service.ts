@@ -41,9 +41,40 @@ export async function crearReserva(db: Database, input: CrearReservaInput) {
   return row!;
 }
 
+// El monto total y pendiente se derivan del precio_final de la cotización
+// asociada (left join, porque cotizacion_id es nullable); se calculan acá
+// con Decimal en vez de dejar que el front reste strings de NUMERIC.
+function conMontos<T extends { montoPagado: string; montoTotal: string | null }>(row: T) {
+  const montoPendiente = row.montoTotal
+    ? Decimal.max(0, new Decimal(row.montoTotal).minus(row.montoPagado)).toFixed(2)
+    : null;
+  return { ...row, montoPendiente };
+}
+
+const columnasConTotal = {
+  id: reservas.id,
+  cotizacionId: reservas.cotizacionId,
+  clienteId: reservas.clienteId,
+  fechaEvento: reservas.fechaEvento,
+  horaEvento: reservas.horaEvento,
+  lugar: reservas.lugar,
+  estado: reservas.estado,
+  estadoPago: reservas.estadoPago,
+  montoPagado: reservas.montoPagado,
+  montoTotal: cotizaciones.precioFinal,
+  calendarEventId: reservas.calendarEventId,
+  notas: reservas.notas,
+  createdAt: reservas.createdAt,
+  updatedAt: reservas.updatedAt,
+};
+
 export async function obtenerReserva(db: Database, id: number) {
-  const [row] = await db.select().from(reservas).where(eq(reservas.id, id));
-  return row ?? null;
+  const [row] = await db
+    .select(columnasConTotal)
+    .from(reservas)
+    .leftJoin(cotizaciones, eq(reservas.cotizacionId, cotizaciones.id))
+    .where(eq(reservas.id, id));
+  return row ? conMontos(row) : null;
 }
 
 export interface ListarReservasOptions {
@@ -58,11 +89,14 @@ export async function listarReservas(db: Database, opts: ListarReservasOptions =
   if (opts.hasta) condiciones.push(lte(reservas.fechaEvento, opts.hasta));
   if (opts.estado) condiciones.push(eq(reservas.estado, opts.estado));
 
-  return db
-    .select()
+  const filas = await db
+    .select(columnasConTotal)
     .from(reservas)
+    .leftJoin(cotizaciones, eq(reservas.cotizacionId, cotizaciones.id))
     .where(condiciones.length ? and(...condiciones) : undefined)
     .orderBy(asc(reservas.fechaEvento));
+
+  return filas.map(conMontos);
 }
 
 export async function actualizarEstadoReserva(db: Database, id: number, estado: ReservaEstado) {

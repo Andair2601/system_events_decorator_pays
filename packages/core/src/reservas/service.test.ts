@@ -141,4 +141,22 @@ describe("reservas.service", () => {
   it("obtenerReserva devuelve null si no existe", async () => {
     expect(await obtenerReserva(db, 9999)).toBeNull();
   });
+
+  it("expone montoTotal y montoPendiente derivados del precio_final de la cotización", async () => {
+    const { cotizacion } = await seedCotizacionAceptada(db); // precioFinal = 100.00
+    const reserva = await crearReserva(db, {
+      cotizacionId: cotizacion.id,
+      fechaEvento: "2026-09-15",
+      lugar: "Salón Los Pinos",
+    });
+    await registrarPago(db, reserva.id, 40);
+
+    const [enLista] = await listarReservas(db);
+    expect(enLista?.montoTotal).toBe("100.00");
+    expect(enLista?.montoPendiente).toBe("60.00");
+
+    const obtenida = await obtenerReserva(db, reserva.id);
+    expect(obtenida?.montoTotal).toBe("100.00");
+    expect(obtenida?.montoPendiente).toBe("60.00");
+  });
 });

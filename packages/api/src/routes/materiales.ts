@@ -3,6 +3,7 @@ import {
   actualizarMaterial,
   crearMaterial,
   desactivarMaterial,
+  eliminarMaterial,
   listarMateriales,
   obtenerMaterial,
   reactivarMaterial,
@@ -39,6 +40,12 @@ export function materialesRoutes(db: Database) {
     const body = await c.req.json();
     const material = await actualizarMaterial(db, id, body);
     return c.json(material);
+  });
+
+  app.delete("/:id", async (c) => {
+    const id = parseIdParam(c.req.param("id"));
+    await eliminarMaterial(db, id);
+    return c.body(null, 204);
   });
 
   app.post("/:id/desactivar", async (c) => {

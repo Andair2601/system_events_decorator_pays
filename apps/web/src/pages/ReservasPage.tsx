@@ -209,12 +209,26 @@ export default function ReservasPage() {
                 </select>
               </td>
               <td>
-                <span
-                  className={`badge ${r.estadoPago === "pagado" ? "success" : r.estadoPago === "parcial" ? "warning" : ""}`}
-                >
-                  {r.estadoPago}
-                </span>{" "}
-                <span className="muted">{r.montoPagado}</span>
+                <div>
+                  <span
+                    className={`badge ${r.estadoPago === "pagado" ? "success" : r.estadoPago === "parcial" ? "warning" : ""}`}
+                  >
+                    {r.estadoPago}
+                  </span>
+                </div>
+                {r.montoTotal ? (
+                  <div className="muted" style={{ fontSize: "0.85rem", marginTop: "0.2rem" }}>
+                    S/ {r.montoPagado} de S/ {r.montoTotal}
+                    {r.estadoPago !== "pagado" && r.montoPendiente && (
+                      <>
+                        {" "}
+                        · pendiente S/ {r.montoPendiente}
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <span className="muted">{r.montoPagado}</span>
+                )}
               </td>
               <td>
                 <div className="inline-form">
