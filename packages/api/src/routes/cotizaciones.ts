@@ -3,6 +3,7 @@ import {
   actualizarCotizacion,
   actualizarEstadoCotizacion,
   crearCotizacion,
+  eliminarCotizacion,
   generarCotizacionPdf,
   listarCotizaciones,
   obtenerCotizacion,
@@ -65,6 +66,12 @@ export function cotizacionesRoutes(db: Database) {
     const body = await c.req.json();
     const cotizacion = await actualizarEstadoCotizacion(db, id, body.estado);
     return c.json(cotizacion);
+  });
+
+  app.delete("/:id", async (c) => {
+    const id = parseIdParam(c.req.param("id"));
+    await eliminarCotizacion(db, id);
+    return c.body(null, 204);
   });
 
   return app;

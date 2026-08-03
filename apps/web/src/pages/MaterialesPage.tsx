@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { MATERIAL_CATEGORIAS, MATERIAL_UNIDADES } from "@deco-eventos/core/src/db/enums.js";
-import { api, ApiError } from "../api/client.js";
+import { api, ApiError, subirArchivoS3 } from "../api/client.js";
 import type { Material } from "../types.js";
 
 const initialForm = {
@@ -8,6 +8,7 @@ const initialForm = {
   categoria: MATERIAL_CATEGORIAS[0],
   costoUnitario: "",
   unidad: MATERIAL_UNIDADES[0],
+  imagenUrl: "",
 };
 
 export default function MaterialesPage() {
@@ -15,6 +16,7 @@ export default function MaterialesPage() {
   const [categoriaFiltro, setCategoriaFiltro] = useState("");
   const [incluirInactivos, setIncluirInactivos] = useState(false);
   const [form, setForm] = useState(initialForm);
+  const [archivo, setArchivo] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
@@ -40,16 +42,19 @@ export default function MaterialesPage() {
   function cancelarEdicion() {
     setEditandoId(null);
     setForm(initialForm);
+    setArchivo(null);
   }
 
   function iniciarEdicion(m: Material) {
     setError(null);
     setEditandoId(m.id);
+    setArchivo(null);
     setForm({
       nombre: m.nombre,
       categoria: m.categoria as typeof initialForm.categoria,
       costoUnitario: m.costoUnitario,
       unidad: m.unidad as typeof initialForm.unidad,
+      imagenUrl: m.imagenUrl ?? "",
     });
   }
 
@@ -58,11 +63,18 @@ export default function MaterialesPage() {
     setError(null);
     setGuardando(true);
     try {
+      let imagenUrl = form.imagenUrl || undefined;
+      if (archivo) {
+        const { uploadUrl, publicUrl } = await api.uploads.obtenerUploadUrl(archivo.type);
+        await subirArchivoS3(uploadUrl, archivo);
+        imagenUrl = publicUrl;
+      }
       const datos = {
         nombre: form.nombre,
         categoria: form.categoria,
         costoUnitario: Number(form.costoUnitario),
         unidad: form.unidad,
+        imagenUrl,
       };
       if (editandoId) {
         await api.materiales.actualizar(editandoId, datos);
@@ -156,6 +168,14 @@ export default function MaterialesPage() {
               ))}
             </select>
           </label>
+          <label>
+            Foto (opcional)
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
+            />
+          </label>
           <div className="actions-row">
             <button type="submit" disabled={guardando}>
               {guardando ? "Guardando…" : editandoId ? "Guardar cambios" : "Agregar material"}
@@ -195,6 +215,7 @@ export default function MaterialesPage() {
       <table>
         <thead>
           <tr>
+            <th></th>
             <th>Nombre</th>
             <th>Categoría</th>
             <th>Costo unitario</th>
@@ -206,6 +227,15 @@ export default function MaterialesPage() {
         <tbody>
           {materiales.map((m) => (
             <tr key={m.id}>
+              <td>
+                {m.imagenUrl && (
+                  <img
+                    src={m.imagenUrl}
+                    alt={m.nombre}
+                    style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }}
+                  />
+                )}
+              </td>
               <td>{m.nombre}</td>
               <td>{m.categoria}</td>
               <td>{m.costoUnitario}</td>
@@ -232,7 +262,7 @@ export default function MaterialesPage() {
           ))}
           {materiales.length === 0 && (
             <tr>
-              <td colSpan={6} className="muted">
+              <td colSpan={7} className="muted">
                 No hay materiales que coincidan con el filtro.
               </td>
             </tr>

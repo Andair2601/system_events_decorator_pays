@@ -17,6 +17,7 @@ export interface Material {
   categoria: MaterialCategoria;
   costoUnitario: string;
   unidad: MaterialUnidad;
+  imagenUrl: string | null;
   activo: boolean;
   createdAt: string;
   updatedAt: string;

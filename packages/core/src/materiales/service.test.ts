@@ -103,6 +103,22 @@ describe("materiales.service", () => {
     expect(actualizado.nombre).toBe("Mantel redondo");
   });
 
+  it("guarda y actualiza la imagenUrl del material", async () => {
+    const creado = await crearMaterial(db, {
+      nombre: "Panel infinito",
+      categoria: "mobiliario",
+      costoUnitario: 40,
+      unidad: "pieza",
+      imagenUrl: "https://cdn.example.com/fotos/panel.jpg",
+    });
+    expect(creado.imagenUrl).toBe("https://cdn.example.com/fotos/panel.jpg");
+
+    const actualizado = await actualizarMaterial(db, creado.id, {
+      imagenUrl: "https://cdn.example.com/fotos/panel-v2.jpg",
+    });
+    expect(actualizado.imagenUrl).toBe("https://cdn.example.com/fotos/panel-v2.jpg");
+  });
+
   it("lanza MaterialNoEncontradoError al actualizar un id inexistente", async () => {
     await expect(actualizarMaterial(db, 9999, { costoUnitario: 1 })).rejects.toBeInstanceOf(
       MaterialNoEncontradoError,

@@ -7,6 +7,7 @@ import { clientes, cotizacionItems, cotizaciones, materiales } from "../db/schem
 import type { CotizacionEstado } from "../db/enums.js";
 import type { Database } from "../db/types.js";
 import {
+  CotizacionEnUsoError,
   CotizacionNoEditableError,
   CotizacionNoEncontradaError,
   MaterialInexistenteError,
@@ -230,6 +231,22 @@ export async function listarCotizaciones(db: Database, opts: ListarCotizacionesO
     .from(cotizaciones)
     .where(condiciones.length ? and(...condiciones) : undefined)
     .orderBy(desc(cotizaciones.createdAt));
+}
+
+// Borrado real (no soft-delete), permitido en cualquier estado: la única
+// restricción real es la reserva asociada (reservas.cotizacion_id tiene
+// FK "restrict"). cotizacion_items se borra en cascada automáticamente.
+export async function eliminarCotizacion(db: Database, id: number) {
+  try {
+    const [row] = await db.delete(cotizaciones).where(eq(cotizaciones.id, id)).returning();
+    if (!row) throw new CotizacionNoEncontradaError(id);
+    return row;
+  } catch (err) {
+    if (err instanceof CotizacionNoEncontradaError) throw err;
+    const code = (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "23503") throw new CotizacionEnUsoError(id);
+    throw err;
+  }
 }
 
 export async function actualizarEstadoCotizacion(

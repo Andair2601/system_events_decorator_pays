@@ -43,6 +43,7 @@ export const materiales = pgTable(
     categoria: text("categoria").notNull(),
     costoUnitario: numeric("costo_unitario", { precision: 12, scale: 2 }).notNull(),
     unidad: text("unidad").notNull(),
+    imagenUrl: text("imagen_url"),
     activo: boolean("activo").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

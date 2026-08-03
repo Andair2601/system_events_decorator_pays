@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import {
   AlbumFotoNoEncontradaError,
   ClienteNoEncontradoError,
+  CotizacionEnUsoError,
   CotizacionNoAceptadaError,
   CotizacionNoEditableError,
   CotizacionNoEncontradaError,
@@ -47,7 +48,8 @@ export function handleError(err: Error, c: Context) {
   if (
     err instanceof CotizacionNoAceptadaError ||
     err instanceof CotizacionNoEditableError ||
-    err instanceof MaterialEnUsoError
+    err instanceof MaterialEnUsoError ||
+    err instanceof CotizacionEnUsoError
   ) {
     return c.json({ error: err.message }, 409);
   }

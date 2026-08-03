@@ -8,6 +8,7 @@ import { configuracionRoutes } from "./routes/configuracion.js";
 import { cotizacionesRoutes } from "./routes/cotizaciones.js";
 import { materialesRoutes } from "./routes/materiales.js";
 import { reservasRoutes } from "./routes/reservas.js";
+import { uploadsRoutes } from "./routes/uploads.js";
 
 // db se inyecta en vez de crearse acá adentro: así el mismo app.ts sirve
 // para el servidor local (postgres-js), los tests (pglite) y, más adelante,
@@ -26,6 +27,7 @@ export function createApp(db: Database) {
   app.route("/cotizaciones", cotizacionesRoutes(db));
   app.route("/reservas", reservasRoutes(db));
   app.route("/album", albumRoutes(db));
+  app.route("/uploads", uploadsRoutes());
 
   return app;
 }

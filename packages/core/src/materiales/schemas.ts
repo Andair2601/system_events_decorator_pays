@@ -6,6 +6,7 @@ export const crearMaterialInputSchema = z.object({
   categoria: z.enum(MATERIAL_CATEGORIAS),
   costoUnitario: z.number().nonnegative("El costo unitario no puede ser negativo"),
   unidad: z.enum(MATERIAL_UNIDADES),
+  imagenUrl: z.string().trim().min(1).optional(),
 });
 export type CrearMaterialInput = z.infer<typeof crearMaterialInputSchema>;
 

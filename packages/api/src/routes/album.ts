@@ -8,35 +8,10 @@ import {
   type Database,
   type TipoEvento,
 } from "@deco-eventos/core";
-import { buildFotoKey, buildPublicUrl, presignUploadUrl } from "../s3.js";
-import { BadRequestError, parseIdParam } from "../utils/params.js";
-
-function getFotosConfig() {
-  const bucket = process.env.ALBUM_FOTOS_BUCKET;
-  const baseUrl = process.env.ALBUM_FOTOS_BASE_URL;
-  if (!bucket || !baseUrl) {
-    throw new Error("ALBUM_FOTOS_BUCKET / ALBUM_FOTOS_BASE_URL no están definidas");
-  }
-  return { bucket, baseUrl };
-}
+import { parseIdParam } from "../utils/params.js";
 
 export function albumRoutes(db: Database) {
   const app = new Hono();
-
-  // Solo firma la URL de subida (operación local, sin llamar a S3 por red);
-  // el navegador hace el PUT real directo a S3. Ver docs/infra.md.
-  app.post("/upload-url", async (c) => {
-    const body = await c.req.json();
-    const contentType = body.contentType;
-    if (typeof contentType !== "string") {
-      throw new BadRequestError("contentType es obligatorio");
-    }
-    const { bucket, baseUrl } = getFotosConfig();
-    const s3Key = buildFotoKey(contentType);
-    const uploadUrl = await presignUploadUrl({ bucket, key: s3Key, contentType });
-    const publicUrl = buildPublicUrl(baseUrl, s3Key);
-    return c.json({ uploadUrl, s3Key, publicUrl });
-  });
 
   app.get("/", async (c) => {
     const categoria = c.req.query("categoria") as TipoEvento | undefined;

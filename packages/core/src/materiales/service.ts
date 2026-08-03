@@ -21,6 +21,7 @@ export async function crearMaterial(db: Database, input: CrearMaterialInput) {
       categoria: data.categoria,
       costoUnitario: new Decimal(data.costoUnitario).toFixed(2),
       unidad: data.unidad,
+      imagenUrl: data.imagenUrl,
     })
     .returning();
   // INSERT ... RETURNING de una sola fila siempre devuelve exactamente una fila.
@@ -58,6 +59,7 @@ export async function actualizarMaterial(
     updateValues.costoUnitario = new Decimal(data.costoUnitario).toFixed(2);
   }
   if (data.unidad !== undefined) updateValues.unidad = data.unidad;
+  if (data.imagenUrl !== undefined) updateValues.imagenUrl = data.imagenUrl;
 
   const [row] = await db
     .update(materiales)

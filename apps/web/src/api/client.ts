@@ -50,9 +50,18 @@ export const api = {
       categoria: string;
       costoUnitario: number;
       unidad: string;
+      imagenUrl?: string;
     }) => request<Material>("/materiales", { method: "POST", body: JSON.stringify(input) }),
-    actualizar: (id: number, input: Partial<{ nombre: string; categoria: string; costoUnitario: number; unidad: string }>) =>
-      request<Material>(`/materiales/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+    actualizar: (
+      id: number,
+      input: Partial<{
+        nombre: string;
+        categoria: string;
+        costoUnitario: number;
+        unidad: string;
+        imagenUrl: string;
+      }>,
+    ) => request<Material>(`/materiales/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
     desactivar: (id: number) => request<Material>(`/materiales/${id}/desactivar`, { method: "POST" }),
     reactivar: (id: number) => request<Material>(`/materiales/${id}/reactivar`, { method: "POST" }),
     eliminar: (id: number) => request<void>(`/materiales/${id}`, { method: "DELETE" }),
@@ -113,6 +122,7 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ estado }),
       }),
+    eliminar: (id: number) => request<void>(`/cotizaciones/${id}`, { method: "DELETE" }),
     pdfUrl: (id: number, vista: "interno" | "cliente" = "interno") =>
       `${API_URL}/cotizaciones/${id}/pdf${vista === "cliente" ? "?vista=cliente" : ""}`,
   },
@@ -148,8 +158,11 @@ export const api = {
       input: Partial<{ categoria: string; reservaId: number | null; destacada: boolean }>,
     ) => request<AlbumFoto>(`/album/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
     eliminar: (id: number) => request<void>(`/album/${id}`, { method: "DELETE" }),
+  },
+
+  uploads: {
     obtenerUploadUrl: (contentType: string) =>
-      request<{ uploadUrl: string; s3Key: string; publicUrl: string }>("/album/upload-url", {
+      request<{ uploadUrl: string; s3Key: string; publicUrl: string }>("/uploads/upload-url", {
         method: "POST",
         body: JSON.stringify({ contentType }),
       }),

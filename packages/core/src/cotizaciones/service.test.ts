@@ -4,7 +4,9 @@ import { guardarConfiguracionCosteo } from "../configuracion/service.js";
 import type { Database } from "../db/types.js";
 import { crearMaterial } from "../materiales/service.js";
 import { createTestDb } from "../test/testDb.js";
+import { crearReserva } from "../reservas/service.js";
 import {
+  CotizacionEnUsoError,
   CotizacionNoEditableError,
   CotizacionNoEncontradaError,
   MaterialInexistenteError,
@@ -13,6 +15,7 @@ import {
   actualizarCotizacion,
   actualizarEstadoCotizacion,
   crearCotizacion,
+  eliminarCotizacion,
   listarCotizaciones,
   obtenerCotizacion,
 } from "./service.js";
@@ -212,5 +215,42 @@ describe("cotizaciones.service", () => {
         items: [{ materialId: 1, cantidad: 1 }],
       }),
     ).rejects.toBeInstanceOf(CotizacionNoEncontradaError);
+  });
+
+  it("elimina una cotización sin reserva asociada, sin importar el estado", async () => {
+    const { cliente, globo } = await seedBase(db);
+    const cotizacion = await crearCotizacion(db, {
+      clienteId: cliente.id,
+      nombreEvento: "Evento a eliminar",
+      tipoEvento: "otro",
+      items: [{ materialId: globo.id, cantidad: 2 }],
+    });
+    await actualizarEstadoCotizacion(db, cotizacion.id, "rechazada");
+
+    await eliminarCotizacion(db, cotizacion.id);
+    expect(await obtenerCotizacion(db, cotizacion.id)).toBeNull();
+  });
+
+  it("lanza CotizacionNoEncontradaError al eliminar un id inexistente", async () => {
+    await expect(eliminarCotizacion(db, 9999)).rejects.toBeInstanceOf(CotizacionNoEncontradaError);
+  });
+
+  it("lanza CotizacionEnUsoError al eliminar una cotización con una reserva asociada", async () => {
+    const { cliente, globo } = await seedBase(db);
+    const cotizacion = await crearCotizacion(db, {
+      clienteId: cliente.id,
+      nombreEvento: "Evento con reserva",
+      tipoEvento: "otro",
+      items: [{ materialId: globo.id, cantidad: 2 }],
+    });
+    await actualizarEstadoCotizacion(db, cotizacion.id, "aceptada");
+    await crearReserva(db, {
+      cotizacionId: cotizacion.id,
+      fechaEvento: "2026-09-15",
+      lugar: "Salón Los Pinos",
+    });
+
+    await expect(eliminarCotizacion(db, cotizacion.id)).rejects.toBeInstanceOf(CotizacionEnUsoError);
+    expect(await obtenerCotizacion(db, cotizacion.id)).not.toBeNull();
   });
 });

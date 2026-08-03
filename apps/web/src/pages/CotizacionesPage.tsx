@@ -158,6 +158,18 @@ export default function CotizacionesPage() {
     }
   }
 
+  async function eliminar(c: Cotizacion) {
+    if (!confirm(`¿Eliminar la cotización "${c.nombreEvento}"? Esta acción no se puede deshacer.`)) return;
+    setError(null);
+    try {
+      await api.cotizaciones.eliminar(c.id);
+      if (editandoId === c.id) cancelarEdicion();
+      await cargarCotizaciones();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "No se pudo eliminar la cotización");
+    }
+  }
+
   async function toggleDetalle(id: number) {
     if (detalles[id]) return;
     try {
@@ -423,6 +435,9 @@ export default function CotizacionesPage() {
                   >
                     PDF cliente
                   </a>
+                  <button type="button" className="danger" onClick={() => eliminar(c)}>
+                    Eliminar
+                  </button>
                 </div>
               </td>
             </tr>

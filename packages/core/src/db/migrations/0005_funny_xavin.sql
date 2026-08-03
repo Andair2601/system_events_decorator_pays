@@ -1,0 +1,1 @@
+ALTER TABLE "materiales" ADD COLUMN "imagen_url" text;

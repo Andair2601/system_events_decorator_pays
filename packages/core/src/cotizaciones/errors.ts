@@ -25,6 +25,16 @@ export class CotizacionNoAceptadaError extends Error {
   }
 }
 
+export class CotizacionEnUsoError extends Error {
+  constructor(public readonly cotizacionId: number) {
+    super(
+      `La cotización ${cotizacionId} tiene una reserva asociada y no se puede eliminar; cancela` +
+        ` o elimina la reserva primero.`,
+    );
+    this.name = "CotizacionEnUsoError";
+  }
+}
+
 export class CotizacionNoEditableError extends Error {
   constructor(
     public readonly cotizacionId: number,

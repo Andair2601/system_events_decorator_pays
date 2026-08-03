@@ -46,7 +46,7 @@ export default function AlbumPage() {
     setError(null);
     setSubiendo(true);
     try {
-      const { uploadUrl, s3Key, publicUrl } = await api.album.obtenerUploadUrl(archivo.type);
+      const { uploadUrl, s3Key, publicUrl } = await api.uploads.obtenerUploadUrl(archivo.type);
       await subirArchivoS3(uploadUrl, archivo);
       await api.album.crear({
         categoria: form.categoria,
