@@ -1,0 +1,4 @@
+ALTER TABLE "cotizaciones" DROP CONSTRAINT "cotizaciones_tipo_evento_check";--> statement-breakpoint
+ALTER TABLE "materiales" DROP CONSTRAINT "materiales_categoria_check";--> statement-breakpoint
+ALTER TABLE "cotizaciones" ADD CONSTRAINT "cotizaciones_tipo_evento_check" CHECK ("cotizaciones"."tipo_evento" in ('cumpleanos_infantil','cumpleanos_adulto','baby_shower','gender_reveal','matrimonio','imposicion_casacas','promocion','compromiso','pedida_mano','aniversario','quince_anos','bautizo','otro'));--> statement-breakpoint
+ALTER TABLE "materiales" ADD CONSTRAINT "materiales_categoria_check" CHECK ("materiales"."categoria" in ('globos','estructura','telas','iluminacion','letras','mobiliario','pirotecnia','sonido','maquinaria','flores','otros'));

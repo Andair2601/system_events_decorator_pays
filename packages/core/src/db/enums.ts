@@ -5,6 +5,10 @@ export const MATERIAL_CATEGORIAS = [
   "iluminacion",
   "letras",
   "mobiliario",
+  "pirotecnia",
+  "sonido",
+  "maquinaria",
+  "flores",
   "otros",
 ] as const;
 export type MaterialCategoria = (typeof MATERIAL_CATEGORIAS)[number];
@@ -14,8 +18,17 @@ export type MaterialUnidad = (typeof MATERIAL_UNIDADES)[number];
 
 export const TIPOS_EVENTO = [
   "cumpleanos_infantil",
+  "cumpleanos_adulto",
   "baby_shower",
   "gender_reveal",
+  "matrimonio",
+  "imposicion_casacas",
+  "promocion",
+  "compromiso",
+  "pedida_mano",
+  "aniversario",
+  "quince_anos",
+  "bautizo",
   "otro",
 ] as const;
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
