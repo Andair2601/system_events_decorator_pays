@@ -19,6 +19,7 @@ import {
   MATERIAL_UNIDADES,
   RESERVA_ESTADOS,
   RESERVA_ESTADOS_PAGO,
+  RESERVA_ITEM_ORIGENES,
   TIPOS_EVENTO,
 } from "./enums.js";
 
@@ -160,6 +161,33 @@ export const reservas = pgTable(
     check("reservas_estado_pago_check", sql`${table.estadoPago} in ('${sql.raw(RESERVA_ESTADOS_PAGO.join("','"))}')`),
     index("idx_reservas_fecha").on(table.fechaEvento),
     index("idx_reservas_cliente").on(table.clienteId),
+  ],
+);
+
+// Checklist de preparación de una reserva: los ítems "cotizacion" se
+// copian (snapshot) de cotizacion_items al crear la reserva o, para
+// reservas creadas antes de que existiera esta tabla, en el primer
+// GET .../detalle (ver reservas/service.ts). Los "adicional" los agrega
+// el usuario a mano y son los únicos que se pueden eliminar — los
+// "cotizacion" solo se marcan/desmarcan, para que el checklist siga
+// siendo un registro fiel de lo que se cotizó.
+export const reservaItems = pgTable(
+  "reserva_items",
+  {
+    id: serial("id").primaryKey(),
+    reservaId: integer("reserva_id")
+      .notNull()
+      .references(() => reservas.id, { onDelete: "cascade" }),
+    materialId: integer("material_id").references(() => materiales.id, { onDelete: "set null" }),
+    descripcion: text("descripcion").notNull(),
+    cantidad: numeric("cantidad", { precision: 10, scale: 2 }),
+    completado: boolean("completado").notNull().default(false),
+    origen: text("origen").notNull().default("adicional"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check("reserva_items_origen_check", sql`${table.origen} in ('${sql.raw(RESERVA_ITEM_ORIGENES.join("','"))}')`),
+    index("idx_reserva_items_reserva").on(table.reservaId),
   ],
 );
 

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client.js";
+import Paginacion from "../components/Paginacion.js";
+import { usePaginacion } from "../hooks/usePaginacion.js";
 import type { Cliente } from "../types.js";
 
 const initialForm = { nombre: "", telefono: "", email: "", notas: "" };
@@ -22,6 +24,8 @@ export default function ClientesPage() {
   useEffect(() => {
     cargar();
   }, []);
+
+  const { itemsPagina, pagina, totalPaginas, setPagina } = usePaginacion(clientes);
 
   async function crear(ev: React.FormEvent) {
     ev.preventDefault();
@@ -97,7 +101,7 @@ export default function ClientesPage() {
           </tr>
         </thead>
         <tbody>
-          {clientes.map((c) => (
+          {itemsPagina.map((c) => (
             <tr key={c.id}>
               <td>{c.nombre}</td>
               <td>{c.telefono}</td>
@@ -115,6 +119,7 @@ export default function ClientesPage() {
         </tbody>
       </table>
       </div>
+      <Paginacion pagina={pagina} totalPaginas={totalPaginas} onCambiar={setPagina} />
     </div>
   );
 }

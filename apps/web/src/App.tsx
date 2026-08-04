@@ -6,6 +6,7 @@ import ClientesPage from "./pages/ClientesPage.js";
 import ConfiguracionPage from "./pages/ConfiguracionPage.js";
 import CotizacionesPage from "./pages/CotizacionesPage.js";
 import GaleriaPage from "./pages/GaleriaPage.js";
+import ReservaDetallePage from "./pages/ReservaDetallePage.js";
 import ReservasPage from "./pages/ReservasPage.js";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/" element={<CotizacionesPage />} />
         <Route path="/cotizaciones" element={<CotizacionesPage />} />
         <Route path="/reservas" element={<ReservasPage />} />
+        <Route path="/reservas/:id" element={<ReservaDetallePage />} />
         <Route path="/materiales" element={<MaterialesPage />} />
         <Route path="/album" element={<AlbumPage />} />
         <Route path="/clientes" element={<ClientesPage />} />

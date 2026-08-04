@@ -5,6 +5,7 @@ import type {
   MaterialUnidad,
   ReservaEstado,
   ReservaEstadoPago,
+  ReservaItemOrigen,
   TipoEvento,
 } from "@deco-eventos/core/src/db/enums.js";
 
@@ -101,4 +102,20 @@ export interface Reserva {
   notas: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReservaItem {
+  id: number;
+  reservaId: number;
+  materialId: number | null;
+  descripcion: string;
+  cantidad: string | null;
+  completado: boolean;
+  origen: ReservaItemOrigen;
+  createdAt: string;
+}
+
+export interface ReservaDetalle extends Reserva {
+  cotizacion: Cotizacion | null;
+  items: ReservaItem[];
 }

@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { MATERIAL_CATEGORIAS, MATERIAL_UNIDADES } from "@deco-eventos/core/src/db/enums.js";
 import { api, ApiError, subirArchivoS3 } from "../api/client.js";
+import ImageLightbox from "../components/ImageLightbox.js";
+import Paginacion from "../components/Paginacion.js";
+import { usePaginacion } from "../hooks/usePaginacion.js";
 import type { Material } from "../types.js";
 
 const initialForm = {
@@ -20,6 +23,7 @@ export default function MaterialesPage() {
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [imagenAmpliada, setImagenAmpliada] = useState<{ src: string; alt: string } | null>(null);
 
   async function cargar() {
     try {
@@ -34,8 +38,11 @@ export default function MaterialesPage() {
     }
   }
 
+  const { itemsPagina, pagina, totalPaginas, setPagina } = usePaginacion(materiales);
+
   useEffect(() => {
     cargar();
+    setPagina(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoriaFiltro, incluirInactivos]);
 
@@ -225,18 +232,25 @@ export default function MaterialesPage() {
           </tr>
         </thead>
         <tbody>
-          {materiales.map((m) => (
+          {itemsPagina.map((m) => (
             <tr key={m.id}>
               <td>
                 {m.imagenUrl && (
                   <img
                     src={m.imagenUrl}
                     alt={m.nombre}
+                    className="clickable"
                     style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }}
+                    onClick={() => setImagenAmpliada({ src: m.imagenUrl!, alt: m.nombre })}
                   />
                 )}
               </td>
-              <td>{m.nombre}</td>
+              <td
+                className={m.imagenUrl ? "clickable" : undefined}
+                onClick={() => m.imagenUrl && setImagenAmpliada({ src: m.imagenUrl, alt: m.nombre })}
+              >
+                {m.nombre}
+              </td>
               <td>{m.categoria}</td>
               <td>{m.costoUnitario}</td>
               <td>{m.unidad}</td>
@@ -270,6 +284,14 @@ export default function MaterialesPage() {
         </tbody>
       </table>
       </div>
+      <Paginacion pagina={pagina} totalPaginas={totalPaginas} onCambiar={setPagina} />
+      {imagenAmpliada && (
+        <ImageLightbox
+          src={imagenAmpliada.src}
+          alt={imagenAmpliada.alt}
+          onClose={() => setImagenAmpliada(null)}
+        />
+      )}
     </div>
   );
 }

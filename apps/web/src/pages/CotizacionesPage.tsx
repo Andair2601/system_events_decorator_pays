@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { COTIZACION_ESTADOS, TIPOS_EVENTO } from "@deco-eventos/core/src/db/enums.js";
 import { api, ApiError } from "../api/client.js";
+import Paginacion from "../components/Paginacion.js";
+import { usePaginacion } from "../hooks/usePaginacion.js";
 import type { Cliente, Cotizacion, CotizacionConItems, Material } from "../types.js";
 
 interface ItemForm {
@@ -47,8 +49,11 @@ export default function CotizacionesPage() {
     }
   }
 
+  const { itemsPagina, pagina, totalPaginas, setPagina } = usePaginacion(cotizaciones);
+
   useEffect(() => {
     cargarCotizaciones();
+    setPagina(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estadoFiltro]);
 
@@ -360,7 +365,7 @@ export default function CotizacionesPage() {
           </tr>
         </thead>
         <tbody>
-          {cotizaciones.map((c) => (
+          {itemsPagina.map((c) => (
             <tr key={c.id}>
               <td>
                 <details className="detail" onToggle={() => toggleDetalle(c.id)}>
@@ -452,6 +457,7 @@ export default function CotizacionesPage() {
         </tbody>
       </table>
       </div>
+      <Paginacion pagina={pagina} totalPaginas={totalPaginas} onCambiar={setPagina} />
     </div>
   );
 }

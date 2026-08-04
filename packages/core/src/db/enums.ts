@@ -44,3 +44,6 @@ export type ReservaEstado = (typeof RESERVA_ESTADOS)[number];
 
 export const RESERVA_ESTADOS_PAGO = ["pendiente", "parcial", "pagado"] as const;
 export type ReservaEstadoPago = (typeof RESERVA_ESTADOS_PAGO)[number];
+
+export const RESERVA_ITEM_ORIGENES = ["cotizacion", "adicional"] as const;
+export type ReservaItemOrigen = (typeof RESERVA_ITEM_ORIGENES)[number];

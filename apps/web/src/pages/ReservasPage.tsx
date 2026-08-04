@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { RESERVA_ESTADOS } from "@deco-eventos/core/src/db/enums.js";
 import { api, ApiError } from "../api/client.js";
+import Paginacion from "../components/Paginacion.js";
+import { usePaginacion } from "../hooks/usePaginacion.js";
 import type { Cliente, Cotizacion, Reserva } from "../types.js";
 
 const initialForm = { cotizacionId: "", fechaEvento: "", horaEvento: "", lugar: "", notas: "" };
@@ -8,6 +11,11 @@ const initialForm = { cotizacionId: "", fechaEvento: "", horaEvento: "", lugar: 
 export default function ReservasPage() {
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [cotizacionesAceptadas, setCotizacionesAceptadas] = useState<Cotizacion[]>([]);
+  // Sin filtrar por estado: a diferencia de cotizacionesAceptadas (solo
+  // para el selector de "Nueva reserva"), esto es para mostrar el nombre
+  // del evento aunque el estado de la cotización haya cambiado después de
+  // crear la reserva.
+  const [cotizacionesTodas, setCotizacionesTodas] = useState<Cotizacion[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [filtros, setFiltros] = useState({ desde: "", hasta: "", estado: "" });
   const [form, setForm] = useState(initialForm);
@@ -30,18 +38,38 @@ export default function ReservasPage() {
     }
   }
 
+  const { itemsPagina, pagina, totalPaginas, setPagina } = usePaginacion(reservas);
+
   useEffect(() => {
     cargarReservas();
+    setPagina(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtros]);
 
   useEffect(() => {
     api.cotizaciones.listar({ estado: "aceptada" }).then(setCotizacionesAceptadas).catch(() => undefined);
+    api.cotizaciones.listar().then(setCotizacionesTodas).catch(() => undefined);
     api.clientes.listar().then(setClientes).catch(() => undefined);
   }, []);
 
   function clienteNombre(id: number) {
     return clientes.find((c) => c.id === id)?.nombre ?? `#${id}`;
+  }
+
+  function cotizacionNombre(id: number | null) {
+    if (!id) return "—";
+    return cotizacionesTodas.find((c) => c.id === id)?.nombreEvento ?? `#${id}`;
+  }
+
+  async function eliminar(r: Reserva) {
+    if (!confirm(`¿Eliminar la reserva del ${r.fechaEvento}? Esta acción no se puede deshacer.`)) return;
+    setError(null);
+    try {
+      await api.reservas.eliminar(r.id);
+      await cargarReservas();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "No se pudo eliminar la reserva");
+    }
   }
 
   async function crear(ev: React.FormEvent) {
@@ -185,13 +213,15 @@ export default function ReservasPage() {
             <th>Fecha</th>
             <th>Lugar</th>
             <th>Cliente</th>
+            <th>Cotización</th>
             <th>Estado</th>
             <th>Pago</th>
             <th>Registrar pago</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
-          {reservas.map((r) => (
+          {itemsPagina.map((r) => (
             <tr key={r.id}>
               <td>
                 {r.fechaEvento}
@@ -199,6 +229,7 @@ export default function ReservasPage() {
               </td>
               <td>{r.lugar}</td>
               <td>{clienteNombre(r.clienteId)}</td>
+              <td>{cotizacionNombre(r.cotizacionId)}</td>
               <td>
                 <select value={r.estado} onChange={(e) => cambiarEstado(r.id, e.target.value)}>
                   {RESERVA_ESTADOS.map((e) => (
@@ -251,11 +282,21 @@ export default function ReservasPage() {
                   </button>
                 </div>
               </td>
+              <td>
+                <div className="actions-row">
+                  <Link className="btn secondary" to={`/reservas/${r.id}`}>
+                    Detalle
+                  </Link>
+                  <button type="button" className="danger" onClick={() => eliminar(r)}>
+                    Eliminar
+                  </button>
+                </div>
+              </td>
             </tr>
           ))}
           {reservas.length === 0 && (
             <tr>
-              <td colSpan={6} className="muted">
+              <td colSpan={8} className="muted">
                 No hay reservas que coincidan con el filtro.
               </td>
             </tr>
@@ -263,6 +304,7 @@ export default function ReservasPage() {
         </tbody>
       </table>
       </div>
+      <Paginacion pagina={pagina} totalPaginas={totalPaginas} onCambiar={setPagina} />
     </div>
   );
 }

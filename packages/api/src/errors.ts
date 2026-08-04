@@ -12,6 +12,8 @@ import {
   MaterialEnUsoError,
   MaterialInexistenteError,
   MaterialNoEncontradoError,
+  ReservaItemFijoError,
+  ReservaItemNoEncontradoError,
   ReservaNoEncontradaError,
 } from "@deco-eventos/core";
 import { BadRequestError } from "./utils/params.js";
@@ -41,7 +43,8 @@ export function handleError(err: Error, c: Context) {
     err instanceof ClienteNoEncontradoError ||
     err instanceof CotizacionNoEncontradaError ||
     err instanceof ReservaNoEncontradaError ||
-    err instanceof AlbumFotoNoEncontradaError
+    err instanceof AlbumFotoNoEncontradaError ||
+    err instanceof ReservaItemNoEncontradoError
   ) {
     return c.json({ error: err.message }, 404);
   }
@@ -49,7 +52,8 @@ export function handleError(err: Error, c: Context) {
     err instanceof CotizacionNoAceptadaError ||
     err instanceof CotizacionNoEditableError ||
     err instanceof MaterialEnUsoError ||
-    err instanceof CotizacionEnUsoError
+    err instanceof CotizacionEnUsoError ||
+    err instanceof ReservaItemFijoError
   ) {
     return c.json({ error: err.message }, 409);
   }

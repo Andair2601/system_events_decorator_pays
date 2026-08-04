@@ -1,16 +1,24 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { crearFoto } from "../album/service.js";
 import { CotizacionNoAceptadaError, CotizacionNoEncontradaError } from "../cotizaciones/errors.js";
 import { actualizarEstadoCotizacion, crearCotizacion } from "../cotizaciones/service.js";
 import { crearCliente } from "../clientes/service.js";
+import { albumFotos, reservas } from "../db/schema.js";
 import type { Database } from "../db/types.js";
 import { crearMaterial } from "../materiales/service.js";
 import { createTestDb } from "../test/testDb.js";
-import { ReservaNoEncontradaError } from "./errors.js";
+import { ReservaItemFijoError, ReservaItemNoEncontradoError, ReservaNoEncontradaError } from "./errors.js";
 import {
   actualizarEstadoReserva,
+  actualizarReservaItem,
+  agregarReservaItemAdicional,
   crearReserva,
+  eliminarReserva,
+  eliminarReservaItem,
   listarReservas,
   obtenerReserva,
+  obtenerReservaDetalle,
   registrarPago,
 } from "./service.js";
 
@@ -158,5 +166,119 @@ describe("reservas.service", () => {
     const obtenida = await obtenerReserva(db, reserva.id);
     expect(obtenida?.montoTotal).toBe("100.00");
     expect(obtenida?.montoPendiente).toBe("60.00");
+  });
+
+  it("crea una reserva y siembra la checklist de materiales desde la cotización", async () => {
+    const { cotizacion } = await seedCotizacionAceptada(db); // 1 item: globo x100
+    const reserva = await crearReserva(db, {
+      cotizacionId: cotizacion.id,
+      fechaEvento: "2026-09-15",
+      lugar: "Salón Los Pinos",
+    });
+
+    const detalle = await obtenerReservaDetalle(db, reserva.id);
+    expect(detalle?.items).toHaveLength(1);
+    expect(detalle?.items[0]?.origen).toBe("cotizacion");
+    expect(detalle?.items[0]?.completado).toBe(false);
+    expect(detalle?.items[0]?.descripcion).toBe("Globo látex 12in");
+    expect(detalle?.cotizacion?.id).toBe(cotizacion.id);
+  });
+
+  it("obtenerReservaDetalle siembra la checklist de forma perezosa para una reserva creada antes de esta feature", async () => {
+    const { cliente, cotizacion } = await seedCotizacionAceptada(db);
+    // Simula una reserva pre-existente insertada directo (sin pasar por
+    // crearReserva, que ya siembra la checklist al crear).
+    const [reservaPrevia] = await db
+      .insert(reservas)
+      .values({
+        cotizacionId: cotizacion.id,
+        clienteId: cliente.id,
+        fechaEvento: "2026-09-15",
+        lugar: "Salón Los Pinos",
+      })
+      .returning();
+
+    const detalle = await obtenerReservaDetalle(db, reservaPrevia!.id);
+    expect(detalle?.items).toHaveLength(1);
+    expect(detalle?.items[0]?.origen).toBe("cotizacion");
+  });
+
+  it("obtenerReservaDetalle devuelve cotizacion null y sin items fijos si la reserva no tiene cotizacionId", async () => {
+    const cliente = await crearCliente(db, { nombre: "Sin cotización", telefono: "+51999333444" });
+    const [reservaSuelta] = await db
+      .insert(reservas)
+      .values({ clienteId: cliente.id, fechaEvento: "2026-09-15", lugar: "Salón Los Pinos" })
+      .returning();
+
+    const detalle = await obtenerReservaDetalle(db, reservaSuelta!.id);
+    expect(detalle?.cotizacion).toBeNull();
+    expect(detalle?.items).toHaveLength(0);
+  });
+
+  it("agrega, marca y elimina un ítem adicional de la checklist", async () => {
+    const { cotizacion } = await seedCotizacionAceptada(db);
+    const reserva = await crearReserva(db, {
+      cotizacionId: cotizacion.id,
+      fechaEvento: "2026-09-15",
+      lugar: "Salón Los Pinos",
+    });
+
+    const item = await agregarReservaItemAdicional(db, reserva.id, {
+      descripcion: "Confirmar transporte",
+      cantidad: 1,
+    });
+    expect(item.origen).toBe("adicional");
+    expect(item.completado).toBe(false);
+
+    const marcado = await actualizarReservaItem(db, item.id, { completado: true });
+    expect(marcado.completado).toBe(true);
+
+    await eliminarReservaItem(db, item.id);
+    const detalle = await obtenerReservaDetalle(db, reserva.id);
+    expect(detalle?.items.find((i) => i.id === item.id)).toBeUndefined();
+  });
+
+  it("lanza ReservaItemNoEncontradoError al actualizar un ítem inexistente", async () => {
+    await expect(actualizarReservaItem(db, 9999, { completado: true })).rejects.toBeInstanceOf(
+      ReservaItemNoEncontradoError,
+    );
+  });
+
+  it("lanza ReservaItemFijoError al intentar eliminar un ítem que viene de la cotización", async () => {
+    const { cotizacion } = await seedCotizacionAceptada(db);
+    const reserva = await crearReserva(db, {
+      cotizacionId: cotizacion.id,
+      fechaEvento: "2026-09-15",
+      lugar: "Salón Los Pinos",
+    });
+    const detalle = await obtenerReservaDetalle(db, reserva.id);
+    const itemFijo = detalle!.items[0]!;
+
+    await expect(eliminarReservaItem(db, itemFijo.id)).rejects.toBeInstanceOf(ReservaItemFijoError);
+  });
+
+  it("elimina una reserva, cascadea su checklist y desasocia las fotos del álbum", async () => {
+    const { cotizacion } = await seedCotizacionAceptada(db);
+    const reserva = await crearReserva(db, {
+      cotizacionId: cotizacion.id,
+      fechaEvento: "2026-09-15",
+      lugar: "Salón Los Pinos",
+    });
+    const foto = await crearFoto(db, {
+      categoria: "otro",
+      reservaId: reserva.id,
+      s3Key: "fotos/x.jpg",
+      url: "https://cdn.example.com/fotos/x.jpg",
+    });
+
+    await eliminarReserva(db, reserva.id);
+
+    expect(await obtenerReserva(db, reserva.id)).toBeNull();
+    const [fotoActualizada] = await db.select().from(albumFotos).where(eq(albumFotos.id, foto.id));
+    expect(fotoActualizada?.reservaId).toBeNull();
+  });
+
+  it("lanza ReservaNoEncontradaError al eliminar un id inexistente", async () => {
+    await expect(eliminarReserva(db, 9999)).rejects.toBeInstanceOf(ReservaNoEncontradaError);
   });
 });

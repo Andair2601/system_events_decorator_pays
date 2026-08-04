@@ -19,3 +19,14 @@ export const actualizarEstadoReservaInputSchema = z.object({
 export const registrarPagoInputSchema = z.object({
   monto: z.number().positive("El monto del pago debe ser mayor a 0"),
 });
+
+export const agregarReservaItemInputSchema = z.object({
+  descripcion: z.string().trim().min(1, "La descripción es obligatoria"),
+  cantidad: z.number().positive().optional(),
+});
+export type AgregarReservaItemInput = z.infer<typeof agregarReservaItemInputSchema>;
+
+export const actualizarReservaItemInputSchema = z.object({
+  completado: z.boolean(),
+});
+export type ActualizarReservaItemInput = z.infer<typeof actualizarReservaItemInputSchema>;

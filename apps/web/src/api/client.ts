@@ -6,6 +6,8 @@ import type {
   ConfiguracionCosteo,
   Material,
   Reserva,
+  ReservaDetalle,
+  ReservaItem,
 } from "../types.js";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
@@ -141,6 +143,17 @@ export const api = {
       request<Reserva>(`/reservas/${id}/estado`, { method: "PATCH", body: JSON.stringify({ estado }) }),
     registrarPago: (id: number, monto: number) =>
       request<Reserva>(`/reservas/${id}/pagos`, { method: "POST", body: JSON.stringify({ monto }) }),
+    eliminar: (id: number) => request<void>(`/reservas/${id}`, { method: "DELETE" }),
+    detalle: (id: number) => request<ReservaDetalle>(`/reservas/${id}/detalle`),
+    agregarItem: (id: number, input: { descripcion: string; cantidad?: number }) =>
+      request<ReservaItem>(`/reservas/${id}/items`, { method: "POST", body: JSON.stringify(input) }),
+    actualizarItem: (id: number, itemId: number, input: { completado: boolean }) =>
+      request<ReservaItem>(`/reservas/${id}/items/${itemId}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }),
+    eliminarItem: (id: number, itemId: number) =>
+      request<void>(`/reservas/${id}/items/${itemId}`, { method: "DELETE" }),
   },
 
   album: {

@@ -1,9 +1,14 @@
 import { Hono } from "hono";
 import {
   actualizarEstadoReserva,
+  actualizarReservaItem,
+  agregarReservaItemAdicional,
   crearReserva,
+  eliminarReserva,
+  eliminarReservaItem,
   listarReservas,
   obtenerReserva,
+  obtenerReservaDetalle,
   registrarPago,
   type Database,
   type ReservaEstado,
@@ -46,6 +51,39 @@ export function reservasRoutes(db: Database) {
     const body = await c.req.json();
     const reserva = await registrarPago(db, id, body.monto);
     return c.json(reserva);
+  });
+
+  app.delete("/:id", async (c) => {
+    const id = parseIdParam(c.req.param("id"));
+    await eliminarReserva(db, id);
+    return c.body(null, 204);
+  });
+
+  app.get("/:id/detalle", async (c) => {
+    const id = parseIdParam(c.req.param("id"));
+    const detalle = await obtenerReservaDetalle(db, id);
+    if (!detalle) return c.json({ error: "Reserva no encontrada" }, 404);
+    return c.json(detalle);
+  });
+
+  app.post("/:id/items", async (c) => {
+    const id = parseIdParam(c.req.param("id"));
+    const body = await c.req.json();
+    const item = await agregarReservaItemAdicional(db, id, body);
+    return c.json(item, 201);
+  });
+
+  app.patch("/:id/items/:itemId", async (c) => {
+    const itemId = parseIdParam(c.req.param("itemId"));
+    const body = await c.req.json();
+    const item = await actualizarReservaItem(db, itemId, body);
+    return c.json(item);
+  });
+
+  app.delete("/:id/items/:itemId", async (c) => {
+    const itemId = parseIdParam(c.req.param("itemId"));
+    await eliminarReservaItem(db, itemId);
+    return c.body(null, 204);
   });
 
   return app;
