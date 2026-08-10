@@ -22,6 +22,10 @@ body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
+  /* Red de seguridad: si algún elemento se resiste a achicarse (ver
+     .item-row/.inline-form) que se recorte en vez de arrastrar toda la
+     página a un scroll horizontal que corre hasta el header. */
+  overflow-x: hidden;
 }
 
 .layout {
@@ -330,14 +334,17 @@ button:disabled {
   gap: 0.6rem;
   align-items: end;
   margin-bottom: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .item-row select {
   flex: 2;
+  min-width: 160px;
 }
 
 .item-row input {
   flex: 1;
+  min-width: 100px;
 }
 
 .actions-row {
@@ -356,6 +363,7 @@ details.detail summary {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .foto-grid {
