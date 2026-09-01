@@ -12,13 +12,12 @@ import * as apigwv2Integrations from "aws-cdk-lib/aws-apigatewayv2-integrations"
 import * as budgets from "aws-cdk-lib/aws-budgets";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as rds from "aws-cdk-lib/aws-rds";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,83 +47,19 @@ export class DecoEventosStack extends Stack {
     // prod conserva snapshot/backup aunque alguien borre la stack por error.
     const esProd = ambiente === "prod";
 
-    // --- Red: sin NAT Gateway ni Internet Gateway a propósito. Lambda solo
-    // necesita hablar con RDS dentro de la VPC; no necesita salir a
-    // internet, así que subredes aisladas alcanzan y evitan el costo fijo
-    // de un NAT Gateway (~$32+/mes).
-    const vpc = new ec2.Vpc(this, "Vpc", {
-      vpcName: nombre("vpc"),
-      maxAzs: 2,
-      natGateways: 0,
-      subnetConfiguration: [
-        {
-          name: nombre("aislada"),
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-          cidrMask: 24,
-        },
-      ],
-    });
-
-    const lambdaSg = new ec2.SecurityGroup(this, "LambdaSg", {
-      securityGroupName: nombre("lambda-sg"),
-      vpc,
-      allowAllOutbound: false,
-      description: "API Lambda de deco-eventos",
-    });
-
-    const dbSg = new ec2.SecurityGroup(this, "DbSg", {
-      securityGroupName: nombre("db-sg"),
-      vpc,
-      allowAllOutbound: false,
-      description: "RDS Postgres de deco-eventos",
-    });
-
-    lambdaSg.connections.allowTo(dbSg, ec2.Port.tcp(5432), "Lambda a Postgres");
-
-    // --- Base de datos: credenciales autogeneradas en Secrets Manager
-    // (nunca hardcodeadas). El connection string se resuelve como
-    // referencia dinámica de CloudFormation en tiempo de deploy y se
-    // inyecta como variable de entorno de Lambda: así el Lambda nunca
-    // necesita llamar a Secrets Manager en runtime, y por lo tanto no
-    // necesita salida a internet (evita pagar un VPC endpoint también).
-    const dbCredentials = rds.Credentials.fromGeneratedSecret("deco_eventos_admin", {
-      secretName: nombre("db-credentials"),
-      // El connection string se arma concatenando strings (ver más abajo),
-      // no con un parser de URL que haga percent-encoding; si el password
-      // generado incluyera alguno de estos caracteres reservados de URI
-      // rompería el parseo y la conexión fallaría con un error de auth
-      // engañoso (nos pasó: "28000 ClientAuthentication").
-      excludeCharacters: ' %+~`#$&*()|[]{}:;<>?!\'"/@\\',
-    });
-
-    const db = new rds.DatabaseInstance(this, "Database", {
-      instanceIdentifier: nombre("db"),
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [dbSg],
-      engine: rds.DatabaseInstanceEngine.postgres({
-        // Sin fijar el minor: AWS retira minors viejos (nos pasó con
-        // 16.4) y así siempre toma el minor por defecto vigente de la
-        // rama 16 en vez de romperse cuando lo retiren de nuevo.
-        version: rds.PostgresEngineVersion.VER_16,
-      }),
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
-      credentials: dbCredentials,
-      databaseName: "deco_eventos",
-      allocatedStorage: 20,
-      storageEncrypted: true,
-      multiAz: false, // Single-AZ: decisión de costo explícita, ver docs/infra.md
-      backupRetention: Duration.days(7),
-      deleteAutomatedBackups: !esProd,
-      deletionProtection: esProd,
-      removalPolicy: esProd ? RemovalPolicy.SNAPSHOT : RemovalPolicy.DESTROY,
-      publiclyAccessible: false,
-    });
-
-    const databaseUrl =
-      `postgres://${db.secret!.secretValueFromJson("username").unsafeUnwrap()}` +
-      `:${db.secret!.secretValueFromJson("password").unsafeUnwrap()}` +
-      `@${db.instanceEndpoint.hostname}:${db.instanceEndpoint.port}/deco_eventos`;
+    // --- Base de datos: Postgres administrado por Supabase (no RDS). El
+    // connection string vive en un secreto de Secrets Manager creado a mano
+    // fuera de CDK (ver docs/infra.md) — no se usa SSM Parameter Store
+    // porque CloudFormation no soporta referencias {{resolve:ssm-secure:...}}
+    // en variables de entorno de Lambda (confirmado en un intento real de
+    // deploy: "SSM Secure reference is not supported in:
+    // AWS::Lambda::Function/.../DATABASE_URL").
+    const dbUrlSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "DbUrlSecret",
+      nombre("database-url"),
+    );
+    const databaseUrl = dbUrlSecret.secretValue.unsafeUnwrap();
 
     // --- Lambda con la API (Hono) detrás de API Gateway HTTP API.
     const logGroup = new logs.LogGroup(this, "ApiLogGroup", {
@@ -138,18 +73,19 @@ export class DecoEventosStack extends Stack {
       entry: path.join(REPO_ROOT, "packages/api/src/lambda.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
-      architecture: lambda.Architecture.ARM_64, // mismo tipo de CPU que db.t4g, y más barato que x86_64
+      architecture: lambda.Architecture.ARM_64, // más barato que x86_64
       memorySize: 256,
       timeout: Duration.seconds(10),
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [lambdaSg],
       logGroup,
       depsLockFilePath: path.join(REPO_ROOT, "pnpm-lock.yaml"),
       environment: {
         DATABASE_URL: databaseUrl,
         DB_POOL_MAX: "2",
         DB_SSL: "require",
+        // Supavisor (pooler de Supabase) puede no preservar prepared
+        // statements entre reconexiones; explícito acá porque esta Lambda
+        // corre bajo invocaciones concurrentes reales.
+        DB_PREPARE: "false",
       },
       bundling: {
         // pdfkit trae archivos de fuentes (.afm) que esbuild no sabe
@@ -178,9 +114,6 @@ export class DecoEventosStack extends Stack {
       architecture: lambda.Architecture.ARM_64,
       memorySize: 128,
       timeout: Duration.seconds(60),
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [lambdaSg],
       logGroup: migrateLogGroup,
       depsLockFilePath: path.join(REPO_ROOT, "pnpm-lock.yaml"),
       environment: { DATABASE_URL: databaseUrl, DB_SSL: "require" },
@@ -238,11 +171,9 @@ export class DecoEventosStack extends Stack {
     // bucket/behavior, cada uno con sus propios registros en su tabla —
     // acá solo se almacena el archivo. Bucket privado, servido públicamente
     // vía la misma distribución de CloudFront del panel (behavior aparte,
-    // no una distribución nueva). El Lambda de la API nunca llama a S3 por
-    // red (está en subred aislada sin salida a internet): solo firma URLs
-    // de subida (operación local, sin llamada HTTP), y el navegador sube
-    // el archivo directo a S3. Por eso alcanza con un grant de IAM
-    // (permiso, no red) y no hace falta un VPC Gateway Endpoint.
+    // no una distribución nueva). El Lambda de la API solo firma URLs de
+    // subida (operación local, sin llamada HTTP a S3); el navegador sube
+    // el archivo directo a S3. Por eso alcanza con un grant de IAM.
     const fotosBucket = new s3.Bucket(this, "FotosBucket", {
       bucketName: `${nombre("fotos")}-${this.account}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -333,7 +264,6 @@ export class DecoEventosStack extends Stack {
     });
 
     new CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });
-    new CfnOutput(this, "DbSecretName", { value: db.secret!.secretName });
     new CfnOutput(this, "PanelUrl", { value: `https://${panelDistribution.distributionDomainName}` });
   }
 }

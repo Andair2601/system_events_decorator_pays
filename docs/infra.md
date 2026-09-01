@@ -5,7 +5,7 @@ parametrizada por ambiente (`dev` / `prod`), misma cuenta de AWS, región
 `us-east-1`. Todo recurso sigue la convención de nombres
 `deco-eventos-{ambiente}-*`.
 
-## Arquitectura (Fase 1)
+## Arquitectura
 
 ```
 Navegador
@@ -19,14 +19,22 @@ API Gateway HTTP API (deco-eventos-{ambiente}-api-gateway)
    │
    ▼
 Lambda "deco-eventos-{ambiente}-api" (Node 24, ARM64, Hono vía hono/aws-lambda)
-   │  (dentro de la VPC, subred aislada, sin acceso a internet, SSL)
+   │  (sin VPC — internet público, SSL)
    ▼
-RDS Postgres "deco-eventos-{ambiente}-db" (db.t4g.micro, Single-AZ)
+Postgres administrado por Supabase (pooler de Supavisor, sesión, puerto 5432)
 ```
 
-Además, un tercer Lambda `deco-eventos-{ambiente}-migrate` (misma VPC/SG,
-sin exponerse vía API Gateway) para aplicar migraciones — ver sección
-"Migraciones" más abajo.
+Además, un tercer Lambda `deco-eventos-{ambiente}-migrate` (sin exponerse
+vía API Gateway) para aplicar migraciones — ver sección "Migraciones" más
+abajo.
+
+**Nota histórica**: hasta 2026-09-01 la base era RDS Postgres
+(`deco-eventos-{ambiente}-db`, `db.t4g.micro`), con ambas Lambdas dentro
+de una VPC de subredes aisladas (sin NAT/IGW) solo para poder alcanzarla
+de forma privada. Se migró a Supabase para eliminar el costo fijo de RDS
+mientras el proyecto sigue en fase de pruebas — ver "Migración a
+Supabase" más abajo para el detalle completo, incluidos los problemas
+reales que aparecieron en el proceso.
 
 ## Panel web (S3 + CloudFront)
 
@@ -53,34 +61,39 @@ tier permanente de 1TB de transferencia + 10M requests/mes (no es solo
 para cuentas nuevas), y S3 para unos cientos de KB de assets es
 centavos.
 
-- **VPC sin NAT Gateway ni Internet Gateway**: Lambda solo necesita hablar
-  con RDS dentro de la misma VPC, así que alcanza con subredes
-  `PRIVATE_ISOLATED`. Esto evita el costo fijo de un NAT Gateway
-  (~$32+/mes) que no aporta nada acá.
-- **Credenciales de base de datos**: autogeneradas por RDS y guardadas en
-  **AWS Secrets Manager** (`deco-eventos-{ambiente}-db-credentials`), nunca
-  en el repo. El connection string completo se arma con una referencia
-  dinámica de CloudFormation (`{{resolve:secretsmanager:...}}`) y se
-  inyecta como variable de entorno `DATABASE_URL` del Lambda en el momento
-  del deploy. Esto significa que el Lambda **nunca llama a Secrets Manager
-  en runtime**, por lo que tampoco necesita salida a internet ni un VPC
-  endpoint (que también tiene costo).
+- **Sin VPC**: ninguna de las dos Lambdas necesita estar en una VPC —
+  Supabase se alcanza por internet público. Esto también simplifica el
+  stack (menos recursos EC2 que gestionar/pagar cuenta de errores) frente
+  al diseño anterior con RDS.
+- **Credenciales de base de datos**: el connection string de Supabase vive
+  en **AWS Secrets Manager** (`deco-eventos-{ambiente}-database-url`),
+  creado a mano fuera de CDK (no autogenerado, a diferencia de cuando era
+  RDS). Se referencia con `secretsmanager.Secret.fromSecretNameV2(...)` y
+  se inyecta como variable de entorno `DATABASE_URL` del Lambda vía
+  `{{resolve:secretsmanager:...}}` en tiempo de deploy — el Lambda nunca
+  llama a Secrets Manager en runtime.
 - **Logs**: CloudWatch Logs con retención de 14 días
   (`/aws/lambda/deco-eventos-{ambiente}-api`).
 - **Presupuesto**: un `AWS Budget` mensual por ambiente con alertas por
   email al 80% y 100% del gasto esperado.
-- **SSL obligatorio con RDS**: la instancia exige conexiones cifradas
-  (`no pg_hba.conf entry ... no encryption` si no se usa). Los Lambdas se
-  conectan con `DB_SSL=require` (ver `packages/core/src/db/client.ts`);
-  el Postgres local de `docker-compose` no lo requiere, así que esa
-  variable solo se setea en la stack de CDK, nunca en `.env` local.
+- **SSL obligatorio**: Supabase exige conexiones cifradas igual que RDS.
+  Los Lambdas se conectan con `DB_SSL=require` (ver
+  `packages/core/src/db/client.ts`); el Postgres local de
+  `docker-compose` no lo requiere, así que esa variable solo se setea en
+  la stack de CDK, nunca en `.env` local.
+- **`DB_PREPARE=false` en la Lambda de la API**: Supavisor (el pooler de
+  Supabase) puede no preservar prepared statements entre reconexiones del
+  pool. Se deshabilitan explícitamente en la Lambda que corre bajo
+  invocaciones concurrentes reales (no en la de migraciones, que usa una
+  sola conexión). Mismo patrón de env var que `DB_SSL`, ver
+  `packages/core/src/db/client.ts`.
 
 ## Migraciones
 
-`deco-eventos-{ambiente}-migrate` es un Lambda separado (mismo acceso a
-la VPC/RDS que la API, sin ruta pública) que corre
-`drizzle-orm/postgres-js/migrator` contra las migraciones de
-`packages/core/src/db/migrations`. **No se invoca automáticamente en cada
+`deco-eventos-{ambiente}-migrate` es un Lambda separado (sin ruta
+pública) que corre `drizzle-orm/postgres-js/migrator` contra las
+migraciones de `packages/core/src/db/migrations`. **No se invoca
+automáticamente en cada
 deploy** — decisión explícita: la alternativa (Custom Resource de CDK que
 corra la migración dentro del propio deploy) es más cómoda pero más
 frágil, porque una migración fallida puede trabar o hacer rollback de
@@ -102,12 +115,17 @@ Linux/Mac— maneja el anidamiento de comillas).
 
 ## Por qué Secrets Manager y no SSM Parameter Store
 
-El plan original mencionaba SSM Parameter Store SecureString como opción;
-se usó Secrets Manager en su lugar porque `rds.DatabaseInstance` lo
-integra de forma nativa (genera y guarda la contraseña automáticamente, sin
-código extra), y el requisito explícito del negocio permite cualquiera de
-las dos ("Secrets Manager o variables de entorno seguras"). Si se prefiere
-SSM en su lugar, es un cambio acotado a `infra/lib/deco-eventos-stack.ts`.
+Al migrar a Supabase (2026-09-01) se intentó primero SSM Parameter Store
+SecureString en vez de Secrets Manager, para ahorrar los ~$0.40/mes del
+secreto (motivo: sin RDS ya no hay una integración nativa que lo
+justifique). **No funciona**: CloudFormation no soporta referencias
+dinámicas `{{resolve:ssm-secure:...}}` en variables de entorno de Lambda
+— confirmado en un intento real de deploy (`ValidationError: SSM Secure
+reference is not supported in: AWS::Lambda::Function/.../DATABASE_URL`).
+Es una limitación documentada de AWS, no evitable con permisos ni config.
+Secrets Manager sí soporta `{{resolve:secretsmanager:...}}` en env vars
+de Lambda, así que se volvió a ese mecanismo. El costo (~$0.40/mes) es
+negligible frente a los ~$15/mes que se ahorran al sacar RDS.
 
 ## Empaquetado del Lambda
 
@@ -122,30 +140,89 @@ en AWS (`GET /cotizaciones/:id/pdf` devolvió un PDF válido de verdad).
 
 ## Costo mensual estimado (por ambiente)
 
+Desde la migración a Supabase (2026-09-01), ya no hay RDS en la cuenta de
+AWS — la base vive en el free tier de Supabase (fuera de este cálculo de
+AWS; ver "Migración a Supabase" abajo por sus propias limitaciones).
+
 | Recurso | Estimado |
 |---|---|
-| RDS db.t4g.micro Single-AZ + 20GB gp3 + backups 7 días | ~$14-15 |
 | Lambda (bajo volumen, dentro del free tier) | ~$0 |
 | API Gateway HTTP API (bajo volumen) | ~$0-1 |
 | CloudWatch Logs | ~$0-1 |
-| Secrets Manager (1 secreto) | ~$0.40 |
-| VPC (sin NAT/IGW) | $0 |
+| Secrets Manager (1 secreto, connection string de Supabase) | ~$0.40 |
 | Panel web (S3 + CloudFront) | ~$0-1 |
-| **Total por ambiente** | **~$15-18/mes** |
+| **Total por ambiente** | **~$1-3/mes** |
 
-Con `dev` y `prod` desplegados simultáneamente: **~$30-34/mes** en total.
 El bucket S3 y el repo ECR que crea `cdk bootstrap` (una sola vez,
 compartido entre ambientes) agregan centavos.
+
+## Migración a Supabase (2026-09-01)
+
+Se migró la base de `dev` de RDS a Supabase para eliminar el costo fijo
+de RDS (~$14-15/mes) mientras el proyecto sigue en fase de pruebas —
+`prod` nunca se había desplegado, así que no se vio afectado. Se decidió
+descartar los datos de prueba que había en RDS (Supabase arrancó con el
+schema limpio de Drizzle) en vez de exportar/importar, para agilizar.
+
+**Problemas reales encontrados en la migración** (quedan documentados
+por lo mismo que la sección de abajo — son costosos de re-diagnosticar):
+
+1. **El `deco-eventos-deployer` no podía asumir los roles de bootstrap de
+   CDK** (`sts:AssumeRole` denegado sobre `cdk-hnb659fds-deploy-role-*` y
+   `cdk-hnb659fds-lookup-role-*`). Sin esto, `cdk diff`/`cdk deploy`
+   caían a usar las credenciales directas del usuario, que no tienen
+   permisos de EC2/RDS/IAM — síntoma engañoso, parecía que faltaban
+   permisos sueltos por cada tipo de recurso cuando en realidad faltaba
+   un solo permiso (`sts:AssumeRole` hacia los roles del bootstrap, que
+   ya tienen todo lo necesario). **Pendiente**: agregar `sts:AssumeRole`
+   hacia `cdk-hnb659fds-deploy-role-*`, `cdk-hnb659fds-lookup-role-*` y
+   `cdk-hnb659fds-file-publishing-role-*` a la policy *permanente* del
+   deployer (no solo a la temporal que se usó para esta migración), para
+   que el próximo deploy no repita este diagnóstico.
+2. **CloudFormation no soporta `{{resolve:ssm-secure:...}}` en env vars
+   de Lambda** — ver "Por qué Secrets Manager y no SSM Parameter Store"
+   arriba.
+3. **ENIs huérfanas de Lambda bloquearon el borrado de la VPC** (el
+   motivo real de que el deploy tardara ~1h50 en vez de minutos): al
+   sacar el `VpcConfig` de ambas Lambdas, AWS debía liberar las ENIs que
+   había creado en las subredes, pero dos de ellas (del Lambda de
+   migraciones) quedaron en estado `available` (ya desconectadas) sin
+   que la limpieza automática las borrara — un bug conocido de AWS
+   Lambda+VPC. CloudFormation reintentó el borrado de subredes/security
+   group en loop sin progresar. Fix: `aws ec2 describe-network-interfaces
+   --filters "Name=vpc-id,Values=<vpc-id>"` para encontrarlas, confirmar
+   `Status: available` (nunca borrar una `in-use`), y
+   `aws ec2 delete-network-interface --network-interface-id <eni-id>` a
+   mano — eso destrabó el borrado normal del resto. El CLI de CDK, después
+   de reintentar internamente por un buen rato, terminó marcando el
+   deploy como `UPDATE_COMPLETE` pero **saltándose** el borrado de la
+   VPC/subredes/security group ("Some resources failed to delete but
+   were skipped") — quedaron huérfanos, fuera del control de
+   CloudFormation, y se borraron a mano por fuera de CDK
+   (`aws ec2 delete-security-group` / `delete-subnet` / `delete-vpc`)
+   una vez liberadas las ENIs. **Lección**: si un deploy que remueve una
+   VPC con Lambdas se cuelga en `UPDATE_COMPLETE_CLEANUP_IN_PROGRESS`
+   por más de ~45-60 min con el mismo error repitiéndose, revisar ENIs
+   huérfanas en vez de asumir que se va a resolver solo.
 
 ## Modelo de permisos IAM
 
 Dos capas:
 
 1. **Usuario IAM `deco-eventos-deployer`** (credenciales que usa quien
-   despliega): gestiona el stack `CDKToolkit` y stacks que empiecen con
-   `deco-eventos-*`, y asume los roles que crea `cdk bootstrap`
-   (`cdk-hnb659fds-*-role-*`). No tiene permisos directos sobre EC2, RDS,
-   etc. — esos los ejerce el rol de CloudFormation, no el usuario.
+   despliega): en teoría gestiona el stack `CDKToolkit` y stacks que
+   empiecen con `deco-eventos-*` asumiendo los roles que crea
+   `cdk bootstrap` (`cdk-hnb659fds-*-role-*`), sin permisos directos
+   sobre EC2/RDS/IAM — esos los ejerce el rol de CloudFormation, no el
+   usuario. **En la práctica (migración a Supabase, 2026-09-01) se
+   descubrió que a la policy le faltaba `sts:AssumeRole` hacia esos
+   mismos roles de bootstrap** — sin eso, el deployer no podía delegar
+   nada y hacía falta ir agregando permisos de EC2/RDS/IAM directos uno
+   por uno para poder operar. Queda como pendiente agregar
+   `sts:AssumeRole` permanentemente (ver sección de la migración) en vez
+   de depender de policies temporales cada vez que hay que desplegar un
+   cambio de infraestructura real.
+
    Además de la política inicial, se agregaron dos statements de solo
    lectura/invocación necesarios para operar después del deploy (no para
    desplegar en sí):
@@ -203,10 +280,10 @@ servido públicamente por la **misma** distribución de CloudFront del panel
 (`additionalBehaviors["/fotos/*"]`, origin propio vía OAC) — no se crea una
 segunda distribución.
 
-**El Lambda de la API nunca llama a S3 por red.** Sigue en subred aislada
-sin salida a internet; para subir/borrar objetos necesitaría alcanzar S3
-por HTTP, y eso exigiría un VPC Gateway Endpoint + reglas de egress
-nuevas. Se evitó ese costo/complejidad con este flujo:
+**El Lambda de la API nunca llama a S3 por red para subir/borrar
+objetos** — firma la URL localmente (HMAC, sin llamada HTTP) y el
+navegador sube el archivo directo. Este flujo se mantiene igual después
+de sacar la Lambda de la VPC (ver migración a Supabase):
 
 1. El navegador pide `POST /album/upload-url` con el `contentType` del
    archivo.
@@ -257,6 +334,14 @@ CloudFront Function o una segunda distribución.
 - Reconciliación de objetos huérfanos en `deco-eventos-{ambiente}-fotos`
   (ver sección de álbum de fotos arriba) — no implementado, no es
   urgente al volumen actual.
+- Borrar la policy inline temporal `temp-migracion-supabase` del usuario
+  `deco-eventos-deployer` (IAM console) — ya cumplió su propósito.
+- Agregar `sts:AssumeRole` hacia los roles de bootstrap de CDK
+  (`cdk-hnb659fds-deploy-role-*`, `cdk-hnb659fds-lookup-role-*`,
+  `cdk-hnb659fds-file-publishing-role-*`) a la policy **permanente** del
+  deployer — ver "Migración a Supabase" arriba. Sin esto, el próximo
+  deploy de infraestructura real va a repetir el mismo diagnóstico de
+  permisos sueltos.
 
 ## Pines de versión de `@aws-sdk/*` (política de supply-chain de pnpm)
 

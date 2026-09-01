@@ -7,7 +7,9 @@ async function main() {
   if (!connectionString) {
     throw new Error("DATABASE_URL no está definida");
   }
-  const client = postgres(connectionString, { max: 1 });
+  // RDS/Supabase exigen SSL; el Postgres local de docker-compose no.
+  const ssl = process.env.DB_SSL === "require" ? "require" : undefined;
+  const client = postgres(connectionString, { max: 1, ssl });
   const db = drizzle(client);
   await migrate(db, { migrationsFolder: "./src/db/migrations" });
   await client.end();
