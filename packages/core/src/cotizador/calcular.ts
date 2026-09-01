@@ -40,9 +40,10 @@ export interface CotizacionCalculada {
   costoManoObra: string;
   costoTransporte: string;
   margenPctAplicado: string;
-  /** materiales + mano de obra + transporte, antes de aplicar margen */
-  baseCosto: string;
+  /** margen aplicado únicamente sobre costoMaterialesTotal */
   margenMonto: string;
+  /** materiales + margen (sobre materiales) + mano de obra — sin transporte */
+  costoServicioDecoracion: string;
   descuentoMonto: string;
   precioFinal: string;
 }
@@ -78,17 +79,22 @@ export function calcularCotizacion(input: CalcularCotizacionInput): CotizacionCa
   const costoTransporte = new Decimal(parsed.costoTransporte);
   const margenPct = new Decimal(parsed.margenPct);
 
-  const baseCosto = costoMaterialesTotal.plus(costoManoObra).plus(costoTransporte);
-  const margenMonto = baseCosto.times(margenPct).dividedBy(100);
+  // El margen de ganancia se aplica SOLO sobre el costo de materiales — la
+  // mano de obra se suma tal cual (sin margen) para formar el "servicio de
+  // decoración", y el transporte queda totalmente afuera de este cálculo:
+  // se cobra aparte, al costo, para no inflarlo con margen.
+  const margenMonto = costoMaterialesTotal.times(margenPct).dividedBy(100);
+  const costoServicioDecoracion = costoMaterialesTotal.plus(margenMonto).plus(costoManoObra);
+  const totalAntesDescuento = costoServicioDecoracion.plus(costoTransporte);
+
   const descuentoMonto = new Decimal(parsed.descuentoMonto);
   if (descuentoMonto.isNegative()) {
     throw new DescuentoInvalidoError("El descuento no puede ser negativo");
   }
-  const subtotalConMargen = baseCosto.plus(margenMonto);
-  if (descuentoMonto.greaterThan(subtotalConMargen)) {
+  if (descuentoMonto.greaterThan(totalAntesDescuento)) {
     throw new DescuentoInvalidoError("El descuento no puede ser mayor al total de la cotización");
   }
-  const precioFinal = subtotalConMargen.minus(descuentoMonto);
+  const precioFinal = totalAntesDescuento.minus(descuentoMonto);
 
   return {
     items,
@@ -96,8 +102,8 @@ export function calcularCotizacion(input: CalcularCotizacionInput): CotizacionCa
     costoManoObra: costoManoObra.toFixed(2),
     costoTransporte: costoTransporte.toFixed(2),
     margenPctAplicado: margenPct.toFixed(2),
-    baseCosto: baseCosto.toFixed(2),
     margenMonto: margenMonto.toFixed(2),
+    costoServicioDecoracion: costoServicioDecoracion.toFixed(2),
     descuentoMonto: descuentoMonto.toFixed(2),
     precioFinal: precioFinal.toFixed(2),
   };

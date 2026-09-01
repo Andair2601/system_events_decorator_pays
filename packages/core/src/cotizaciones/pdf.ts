@@ -235,27 +235,30 @@ export async function generarCotizacionPdf(
       doc.y = fila + Math.max(alturaEtiqueta, 14) + (negrita ? 8 : 6);
     }
 
-    const baseCosto = new Decimal(data.costoMaterialesTotal)
-      .plus(data.costoManoObra)
-      .plus(data.costoTransporte);
-    const margenMonto = baseCosto.times(data.margenPctAplicado).dividedBy(100);
+    // El margen se aplica solo sobre materiales (ver
+    // packages/core/src/cotizador/calcular.ts); estos campos no se
+    // persisten en la tabla, así que se recalculan acá con la misma
+    // fórmula a partir de lo que sí está guardado.
+    const margenMonto = new Decimal(data.costoMaterialesTotal)
+      .times(data.margenPctAplicado)
+      .dividedBy(100);
+    const servicioDecoracion = new Decimal(data.costoMaterialesTotal)
+      .plus(margenMonto)
+      .plus(data.costoManoObra);
     const descuentoMonto = new Decimal(data.descuentoMonto);
 
     if (vista === "cliente") {
-      // Un solo ítem "Servicio de decoración" (materiales + instalación y
-      // montaje + margen) para no desglosar costos internos al cliente; el
-      // total sigue cuadrando porque es el mismo baseCosto menos transporte,
-      // más el margen.
-      const servicioDecoracion = new Decimal(data.costoMaterialesTotal)
-        .plus(data.costoManoObra)
-        .plus(margenMonto);
+      // Un solo ítem "Servicio de decoración" (materiales + margen +
+      // instalación y montaje) para no desglosar costos internos al
+      // cliente; el transporte se muestra aparte, al costo, sin margen.
       lineaResumen("Servicio de decoración", `${MONEDA} ${servicioDecoracion.toFixed(2)}`);
       lineaResumen("Transporte", `${MONEDA} ${data.costoTransporte}`);
     } else {
       lineaResumen("Materiales", `${MONEDA} ${data.costoMaterialesTotal}`);
+      lineaResumen("Margen (sobre materiales)", `${data.margenPctAplicado}% = ${MONEDA} ${margenMonto.toFixed(2)}`);
       lineaResumen(`Mano de obra (${data.horasManoObraEstimadas} h)`, `${MONEDA} ${data.costoManoObra}`);
-      lineaResumen("Transporte", `${MONEDA} ${data.costoTransporte}`);
-      lineaResumen("Margen aplicado", `${data.margenPctAplicado}%`);
+      lineaResumen("Servicio de decoración", `${MONEDA} ${servicioDecoracion.toFixed(2)}`);
+      lineaResumen("Transporte (sin margen)", `${MONEDA} ${data.costoTransporte}`);
     }
     if (descuentoMonto.greaterThan(0)) {
       lineaResumen("Descuento", `-${MONEDA} ${descuentoMonto.toFixed(2)}`);

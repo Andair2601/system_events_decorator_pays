@@ -66,12 +66,13 @@ describe("cotizaciones.service", () => {
     // materiales: 50*0.8 + 1*45 = 40 + 45 = 85
     // mano de obra: 3 * 20 (default) = 60
     // transporte: 15 (default)
-    // base = 85 + 60 + 15 = 160; margen 30% (default) = 48; final = 208
+    // margen 30% (default) SOLO sobre materiales = 25.5
+    // servicio = 85 + 25.5 + 60 = 170.5; final = servicio + transporte = 185.5
     expect(cotizacion.costoMaterialesTotal).toBe("85.00");
     expect(cotizacion.costoManoObra).toBe("60.00");
     expect(cotizacion.costoTransporte).toBe("15.00");
     expect(cotizacion.margenPctAplicado).toBe("30.00");
-    expect(cotizacion.precioFinal).toBe("208.00");
+    expect(cotizacion.precioFinal).toBe("185.50");
     expect(cotizacion.estado).toBe("borrador");
     expect(cotizacion.origen).toBe("manual");
     expect(cotizacion.items).toHaveLength(2);
@@ -166,8 +167,9 @@ describe("cotizaciones.service", () => {
       tipoEvento: "cumpleanos_infantil",
       items: [{ materialId: globo.id, cantidad: 10 }],
     });
-    // materiales 10*0.8=8; +transporte 15 (default) = 23; margen 30% = 6.9 -> 29.90
-    expect(cotizacion.precioFinal).toBe("29.90");
+    // materiales 10*0.8=8; margen 30% sobre materiales = 2.4; servicio = 10.4;
+    // +transporte 15 (default) = 25.40
+    expect(cotizacion.precioFinal).toBe("25.40");
 
     const editada = await actualizarCotizacion(db, cotizacion.id, {
       nombreEvento: "Cumple de Mateo (actualizado)",
@@ -179,10 +181,11 @@ describe("cotizaciones.service", () => {
     expect(editada.nombreEvento).toBe("Cumple de Mateo (actualizado)");
     expect(editada.items).toHaveLength(1);
     expect(editada.items[0]?.materialId).toBe(arco.id);
-    // materiales: 2*45=90; +transporte 15 (default) = 105; margen 30% = 31.5 -> 136.5; -10 descuento
+    // materiales: 2*45=90; margen 30% sobre materiales = 27; servicio = 117;
+    // +transporte 15 (default) = 132; -10 descuento = 122.00
     expect(editada.costoMaterialesTotal).toBe("90.00");
     expect(editada.descuentoMonto).toBe("10.00");
-    expect(editada.precioFinal).toBe("126.50");
+    expect(editada.precioFinal).toBe("122.00");
 
     const releida = await obtenerCotizacion(db, cotizacion.id);
     expect(releida?.items).toHaveLength(1);

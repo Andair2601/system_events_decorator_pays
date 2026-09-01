@@ -17,10 +17,11 @@ describe("calcularCotizacion", () => {
     expect(resultado.costoMaterialesTotal).toBe("20.00");
     expect(resultado.costoManoObra).toBe("45.00");
     expect(resultado.costoTransporte).toBe("20.00");
-    // base = 20 + 45 + 20 = 85; margen 30% = 25.5; final = 110.5
-    expect(resultado.baseCosto).toBe("85.00");
-    expect(resultado.margenMonto).toBe("25.50");
-    expect(resultado.precioFinal).toBe("110.50");
+    // margen 30% solo sobre materiales (20) = 6; servicio = 20 + 6 + 45 = 71;
+    // final = servicio (71) + transporte (20) = 91
+    expect(resultado.margenMonto).toBe("6.00");
+    expect(resultado.costoServicioDecoracion).toBe("71.00");
+    expect(resultado.precioFinal).toBe("91.00");
   });
 
   it("suma correctamente varios materiales", () => {
@@ -51,7 +52,7 @@ describe("calcularCotizacion", () => {
 
     expect(resultado.costoManoObra).toBe("0.00");
     expect(resultado.costoTransporte).toBe("0.00");
-    expect(resultado.baseCosto).toBe("100.00");
+    expect(resultado.costoServicioDecoracion).toBe("120.00");
     expect(resultado.precioFinal).toBe("120.00");
   });
 
@@ -78,11 +79,12 @@ describe("calcularCotizacion", () => {
       margenPct: "25.00",
     });
 
-    // materiales = 30, mano de obra = 30, transporte = 10 -> base 70, margen 25% = 17.5
+    // materiales = 30, margen 25% sobre materiales = 7.5, mano de obra = 30
+    // -> servicio = 67.5, + transporte 10 = 77.5
     expect(resultado.costoMaterialesTotal).toBe("30.00");
     expect(resultado.costoManoObra).toBe("30.00");
-    expect(resultado.baseCosto).toBe("70.00");
-    expect(resultado.precioFinal).toBe("87.50");
+    expect(resultado.costoServicioDecoracion).toBe("67.50");
+    expect(resultado.precioFinal).toBe("77.50");
   });
 
   it("rechaza una cotización sin materiales", () => {
@@ -125,9 +127,9 @@ describe("calcularCotizacion", () => {
       descuentoMonto: 10,
     });
 
-    // subtotal con margen = 110.50 (igual que el primer test); -10 de descuento
+    // total antes de descuento = 91.00 (igual que el primer test); -10 de descuento
     expect(resultado.descuentoMonto).toBe("10.00");
-    expect(resultado.precioFinal).toBe("100.50");
+    expect(resultado.precioFinal).toBe("81.00");
   });
 
   it("sin descuento, precioFinal no cambia (default 0)", () => {
