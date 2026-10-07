@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { COTIZACION_ESTADOS, TIPOS_EVENTO } from "@deco-eventos/core/src/db/enums.js";
 import { api, ApiError } from "../api/client.js";
+import MaterialSelect from "../components/MaterialSelect.js";
+import NuevoMaterialModal from "../components/NuevoMaterialModal.js";
 import Paginacion from "../components/Paginacion.js";
 import { usePaginacion } from "../hooks/usePaginacion.js";
 import type { Cliente, Cotizacion, CotizacionConItems, Material } from "../types.js";
@@ -35,6 +37,7 @@ export default function CotizacionesPage() {
   const [estadoFiltro, setEstadoFiltro] = useState("");
   const [form, setForm] = useState(initialForm);
   const [items, setItems] = useState<ItemForm[]>([{ materialId: "", cantidad: "" }]);
+  const [modalMaterial, setModalMaterial] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [detalles, setDetalles] = useState<Record<number, CotizacionConItems>>({});
@@ -76,6 +79,18 @@ export default function CotizacionesPage() {
 
   function agregarItem() {
     setItems((prev) => [...prev, { materialId: "", cantidad: "" }]);
+  }
+
+  // Material recién registrado desde el popup: entra al listado y queda
+  // seleccionado en la primera fila sin material (o en una fila nueva).
+  function materialCreado(material: Material) {
+    setMateriales((prev) => [...prev, material]);
+    setItems((prev) => {
+      const libre = prev.findIndex((it) => it.materialId === "");
+      if (libre === -1) return [...prev, { materialId: String(material.id), cantidad: "" }];
+      return prev.map((it, i) => (i === libre ? { ...it, materialId: String(material.id) } : it));
+    });
+    setModalMaterial(false);
   }
 
   function quitarItem(index: number) {
@@ -239,20 +254,11 @@ export default function CotizacionesPage() {
           <h2>Materiales</h2>
           {items.map((it, i) => (
             <div className="item-row" key={i}>
-              <select
+              <MaterialSelect
+                materiales={materiales.filter((m) => m.activo)}
                 value={it.materialId}
-                onChange={(e) => actualizarItem(i, { materialId: e.target.value })}
-                required
-              >
-                <option value="">Selecciona material…</option>
-                {materiales
-                  .filter((m) => m.activo)
-                  .map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nombre} ({m.costoUnitario}/{m.unidad})
-                    </option>
-                  ))}
-              </select>
+                onChange={(materialId) => actualizarItem(i, { materialId })}
+              />
               <input
                 type="number"
                 min="0.01"
@@ -267,9 +273,20 @@ export default function CotizacionesPage() {
               </button>
             </div>
           ))}
-          <button type="button" className="secondary" onClick={agregarItem} style={{ marginBottom: "1rem" }}>
-            + Agregar material
-          </button>
+          <div className="actions-row" style={{ marginBottom: "1rem" }}>
+            <button type="button" className="secondary" onClick={agregarItem}>
+              + Agregar material
+            </button>
+            <button type="button" className="secondary" onClick={() => setModalMaterial(true)}>
+              + Registrar material nuevo
+            </button>
+          </div>
+          {modalMaterial && (
+            <NuevoMaterialModal
+              onClose={() => setModalMaterial(false)}
+              onCreado={materialCreado}
+            />
+          )}
 
           <h2>Overrides opcionales (si se omiten, usa configuración de costeo)</h2>
           <div className="form-grid" style={{ marginBottom: "1rem" }}>

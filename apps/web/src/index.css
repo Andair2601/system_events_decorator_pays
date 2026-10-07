@@ -342,9 +342,65 @@ button:disabled {
   min-width: 160px;
 }
 
-.item-row input {
+.item-row > input {
   flex: 1;
   min-width: 100px;
+}
+
+.material-select {
+  position: relative;
+  flex: 2;
+  min-width: 160px;
+}
+
+.material-select > input[type="text"] {
+  width: 100%;
+}
+
+/* Existe solo para la validación "required"; invisible pero enfocable por el
+   navegador para poder mostrar el aviso nativo. */
+.material-select-required {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  padding: 0;
+  border: 0;
+}
+
+.material-select-list {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 2px 0 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
+.material-select-list li {
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+}
+
+.material-select-list li.activo {
+  background: var(--color-primary);
+  color: white;
+}
+
+.material-select-empty {
+  color: var(--color-text-muted);
+  cursor: default !important;
 }
 
 .actions-row {
@@ -420,6 +476,27 @@ details.detail summary {
 
 .galeria-seccion h2 {
   text-transform: capitalize;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modal-card {
+  background: white;
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .lightbox-backdrop {
